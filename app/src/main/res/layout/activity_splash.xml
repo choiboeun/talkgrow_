@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:gravity="center"
+    android:orientation="vertical"
+    android:background="#D3E5FF">
+
+    <ImageView
+        android:id="@+id/logoImage"
+        android:layout_width="150dp"
+        android:layout_height="150dp"
+        android:src="@drawable/logo"
+        android:contentDescription="앱 로고"
+        android:layout_marginBottom="20dp" />
+
+    <TextView
+        android:id="@+id/loadingText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Talk Grow"
+        android:textSize="30sp"
+        android:textColor="#000000"/>
+
+    <ProgressBar
+        android:layout_width="40dp"
+        android:layout_height="30dp"
+        android:indeterminate="true"
+        style="?android:attr/progressBarStyleSmall"
+        android:layout_marginTop="20dp" />
+
+</LinearLayout>
