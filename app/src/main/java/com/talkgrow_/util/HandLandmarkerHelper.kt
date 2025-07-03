@@ -362,7 +362,7 @@ class HandLandmarkerHelper(
         const val DEFAULT_HAND_DETECTION_CONFIDENCE = 0.5F
         const val DEFAULT_HAND_TRACKING_CONFIDENCE = 0.5F
         const val DEFAULT_HAND_PRESENCE_CONFIDENCE = 0.5F
-        const val DEFAULT_NUM_HANDS = 1
+        const val DEFAULT_NUM_HANDS = 2
         const val OTHER_ERROR = 0
         const val GPU_ERROR = 1
     }

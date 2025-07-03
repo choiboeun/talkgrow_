@@ -1,40 +1,121 @@
+<?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/camera_layout"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:fitsSystemWindows="true">
 
-    <!-- 카메라 프리뷰 (배경) -->
+    <!-- 🔷 상단 헤더 (header.xml 스타일 직접 삽입) -->
+    <LinearLayout
+        android:id="@+id/camera_header"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="#D3E5FF"
+        android:paddingTop="22dp"
+        android:paddingBottom="10dp"
+        android:gravity="center_horizontal"
+        android:elevation="10dp">
+
+        <!-- 타이틀 -->
+        <TextView
+            android:id="@+id/header_title"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="TalkGrow"
+            android:textSize="25sp"
+            android:textColor="#595959" />
+
+        <!-- 언어 토글 버튼 가로 정렬 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:paddingTop="10dp"
+            android:paddingBottom="10dp">
+
+            <!-- 왼쪽 버튼 -->
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center">
+
+                <Button
+                    android:id="@+id/button_left"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_margin="4dp"
+                    android:background="@android:color/transparent"
+                    android:clickable="true"
+                    android:focusable="false"
+                    android:paddingLeft="10dp"
+                    android:paddingTop="6dp"
+                    android:paddingRight="10dp"
+                    android:paddingBottom="6dp"
+                    android:text="한국어 수어"
+                    android:textColor="#595959"
+                    android:textSize="20sp" />
+            </LinearLayout>
+
+            <!-- 토글 이미지 버튼 -->
+            <LinearLayout
+                android:layout_width="55dp"
+                android:layout_height="wrap_content"
+                android:gravity="center">
+
+                <ImageButton
+                    android:id="@+id/button_toggle"
+                    android:layout_width="50dp"
+                    android:layout_height="60dp"
+                    android:src="@drawable/toggle1"
+                    android:background="@null"
+                    android:contentDescription="Toggle Button"
+                    android:scaleType="fitCenter" />
+            </LinearLayout>
+
+            <!-- 오른쪽 버튼 -->
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center">
+
+                <Button
+                    android:id="@+id/button_right"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_margin="4dp"
+                    android:background="@android:color/transparent"
+                    android:clickable="true"
+                    android:focusable="false"
+                    android:paddingLeft="10dp"
+                    android:paddingTop="6dp"
+                    android:paddingRight="10dp"
+                    android:paddingBottom="6dp"
+                    android:text="한국어"
+                    android:textColor="#595959"
+                    android:textSize="20sp" />
+            </LinearLayout>
+        </LinearLayout>
+    </LinearLayout>
+
+    <!--  카메라 프리뷰 -->
     <androidx.camera.view.PreviewView
         android:id="@+id/previewView"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="#000000"
-        />
+        android:background="#000000" />
 
-    <!-- 👇 이 부분을 추가 -->
+    <!--  손 랜드마크 오버레이 -->
     <com.talkgrow_.util.OverlayView
         android:id="@+id/overlayView"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:background="@android:color/transparent" />
 
-    <!-- 헤더 오버레이 -->
-    <LinearLayout
-        android:id="@+id/camera_header"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:background="#D3E5FF"
-        android:orientation="vertical"
-        android:paddingTop="22dp"
-        android:paddingBottom="10dp"
-        android:gravity="center_horizontal"
-        android:layout_gravity="top">
-
-
-    </LinearLayout>
-
-    <!-- 번역 버튼 (하단 고정) -->
+    <!--  번역 버튼 (하단 고정) -->
     <Button
         android:id="@+id/translate_button"
         android:layout_width="wrap_content"
@@ -48,4 +129,5 @@
         android:elevation="5dp"
         android:paddingHorizontal="20dp"
         android:paddingVertical="10dp" />
+
 </FrameLayout>
