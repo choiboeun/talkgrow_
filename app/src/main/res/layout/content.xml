@@ -1,4 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  작성자: 조경주, 최보은
+  작성일: 2025-07-06
+  기능 설명: 번역할 내용을 입력하는 EditText를 포함한 콘텐츠 영역 레이아웃
+  수정 이력:
+    - 2025-07-06 : 초기 레이아웃 작성
+  TODO:
+    - 입력 글자 수 제한 및 키보드 동작 개선 예정
+-->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/content_layout"
     android:layout_width="match_parent"
@@ -9,6 +18,7 @@
     android:paddingTop="130dp"
     android:paddingEnd="20dp">
 
+    <!-- 번역할 텍스트 입력란 -->
     <EditText
         android:id="@+id/edit_text_content"
         android:layout_width="match_parent"

@@ -1,4 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  작성자: 조경주, 최보은
+  작성일: 2025-07-06
+  기능 설명: 카메라 버튼 레이아웃 - 카메라 아이콘과 설명 텍스트를 세로로 배치, 클릭 가능하도록 설정
+  수정 이력:
+    - 2025-07-06 : 초기 레이아웃 작성
+  TODO:
+    - 클릭 효과 및 접근성 개선 예정
+-->
 <LinearLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
@@ -12,6 +21,7 @@
     android:focusable="true"
     android:foreground="?attr/selectableItemBackground">
 
+    <!-- 카메라 아이콘 이미지 -->
     <ImageView
         android:id="@+id/cameraicon"
         android:layout_width="50dp"
@@ -20,6 +30,7 @@
         android:contentDescription="카메라 아이콘"
         android:src="@drawable/cameraicon" />
 
+    <!-- 수어 번역 카메라 텍스트 -->
     <TextView
         android:id="@+id/camera_text"
         android:layout_width="wrap_content"
@@ -35,3 +46,4 @@
         android:textSize="20sp" />
 
 </LinearLayout>
+

@@ -1,11 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  작성자: 조경주, 최보은
+  작성일: 2025-07-06
+  기능 설명: CameraActivity 화면 레이아웃 - 상단 헤더, 카메라 프리뷰, 손 랜드마크 오버레이, 하단 번역 버튼 배치
+  수정 이력:
+    - 2025-07-06 : 초기 레이아웃 작성 및 주요 컴포넌트 배치
+  TODO:
+    - 번역 버튼 기능 연결 및 UI 개선 예정
+-->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/camera_layout"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:fitsSystemWindows="true">
 
-    <!-- 🔷 상단 헤더 (header.xml 스타일 직접 삽입) -->
+    <!-- 상단 헤더 영역: 타이틀과 언어 선택 버튼 그룹 포함 -->
     <LinearLayout
         android:id="@+id/camera_header"
         android:layout_width="match_parent"
@@ -17,7 +26,7 @@
         android:gravity="center_horizontal"
         android:elevation="10dp">
 
-        <!-- 타이틀 -->
+        <!-- 타이틀 텍스트 -->
         <TextView
             android:id="@+id/header_title"
             android:layout_width="wrap_content"
@@ -26,7 +35,7 @@
             android:textSize="25sp"
             android:textColor="#595959" />
 
-        <!-- 언어 토글 버튼 가로 정렬 -->
+        <!-- 언어 토글 버튼 영역 (가로 정렬) -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -35,7 +44,7 @@
             android:paddingTop="10dp"
             android:paddingBottom="10dp">
 
-            <!-- 왼쪽 버튼 -->
+            <!-- 왼쪽 버튼: 한국어 수어 -->
             <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
@@ -75,7 +84,7 @@
                     android:scaleType="fitCenter" />
             </LinearLayout>
 
-            <!-- 오른쪽 버튼 -->
+            <!-- 오른쪽 버튼: 한국어 -->
             <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
@@ -101,21 +110,21 @@
         </LinearLayout>
     </LinearLayout>
 
-    <!--  카메라 프리뷰 -->
+    <!-- 카메라 프리뷰 화면 전체 배치 -->
     <androidx.camera.view.PreviewView
         android:id="@+id/previewView"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:background="#000000" />
 
-    <!--  손 랜드마크 오버레이 -->
+    <!-- 손 랜드마크 결과를 그려주는 투명 오버레이 -->
     <com.talkgrow_.util.OverlayView
         android:id="@+id/overlayView"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:background="@android:color/transparent" />
 
-    <!--  번역 버튼 (하단 고정) -->
+    <!-- 하단 고정 번역 버튼 -->
     <Button
         android:id="@+id/translate_button"
         android:layout_width="wrap_content"
@@ -131,3 +140,4 @@
         android:paddingVertical="10dp" />
 
 </FrameLayout>
+

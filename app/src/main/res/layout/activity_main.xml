@@ -1,4 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  작성자: 조경주, 최보은
+  작성일: 2025-07-06
+  기능 설명: MainActivity의 전체 레이아웃 구성, 헤더, 콘텐츠, 아바타 버튼, 카메라 버튼을 ConstraintLayout으로 배치
+  수정 이력:
+    - 2025-07-06 : 초기 레이아웃 구성 및 각 부분 include로 분리
+  TODO:
+    - 각 include된 레이아웃 파일 세부 스타일 및 기능 개선 예정
+-->
 <androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
@@ -7,6 +16,7 @@
     android:layout_height="match_parent"
     tools:context=".MainActivity">
 
+    <!-- 헤더 영역: 상단 고정, app:layout_constraint로 부모에 맞춤 -->
     <include
         android:id="@+id/header"
         layout="@layout/header"
@@ -16,6 +26,7 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 
+    <!-- 콘텐츠 영역: 헤더 아래 위치, 아바타 버튼 위에 배치 -->
     <include
         android:id="@+id/content"
         layout="@layout/content"
@@ -26,6 +37,7 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintBottom_toTopOf="@id/avatar_button" />
 
+    <!-- 아바타 버튼 영역: 콘텐츠 아래, 카메라 버튼 위에 배치 -->
     <include
         android:id="@+id/avatar_button"
         layout="@layout/avatarbutton"
@@ -36,6 +48,7 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintBottom_toTopOf="@id/camera_button" />
 
+    <!-- 카메라 버튼 영역: 화면 하단에 고정 -->
     <include
         android:id="@+id/camera_button"
         layout="@layout/camerabutton"
@@ -46,6 +59,4 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintBottom_toBottomOf="parent" />
 
-
-    
 </androidx.constraintlayout.widget.ConstraintLayout>
