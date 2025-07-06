@@ -11,7 +11,19 @@ import android.content.Intent
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
-
+/**
+ * 작성자: 조경주, 최보은
+ * 작성일: 2025-07-06
+ * 기능 설명: MainActivity - 앱의 메인 화면을 구성하고 버튼 클릭 이벤트를 처리함
+ *
+ * 수정 이력:
+ *  - 2025-07-06 : 초기 생성 및 기본 버튼 기능 구현
+ *
+ * TODO:
+ *  - content 부분 클릭 시 버튼 이동 현상 수정 필요
+ *  - 음성 인식 기능 추가 필요, 음성 권환 확인 필요
+ *  - 아바타 생성 화면 이동 기능 구현 필요
+ */
 class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
