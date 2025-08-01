@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="?attr/colorControlHighlight">
+
+    <!-- 터치 시 ripple 모양 마스크 (동그라미) -->
+    <item android:id="@android:id/mask">
+        <shape android:shape="oval">
+            <solid android:color="#FFFFFF" />
+        </shape>
+    </item>
+
+    <!-- 배경 원형 색상 -->
+    <item>
+        <shape android:shape="oval">
+            <solid android:color="#D3E5FF" /> <!-- 원하는 버튼 배경색 -->
+        </shape>
+    </item>
+
+</ripple>

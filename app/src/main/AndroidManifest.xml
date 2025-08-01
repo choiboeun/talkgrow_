@@ -6,6 +6,8 @@
        - 카메라 권한과 하드웨어 지원 선언
        - 스플래시 화면, 메인 화면, 카메라 화면 액티비티 등록
        - 앱 아이콘 및 테마 설정 포함
+  수정 이력:
+        - 오디오 사용 권한 추가
   TODO:
        - 필요 시 추가 권한 및 기능 확장
 -->
@@ -14,6 +16,9 @@
 
     <!-- 카메라 사용 권한 선언 -->
     <uses-permission android:name="android.permission.CAMERA" />
+    <!-- 오디오 사용 권한 선언 -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+
     <!-- 카메라 하드웨어 필수 여부 설정 -->
     <uses-feature android:name="android.hardware.camera" android:required="true" />
 
