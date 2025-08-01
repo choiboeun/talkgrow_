@@ -22,6 +22,7 @@ import androidx.core.view.WindowInsetsCompat
  *
  * 수정 이력:
  *  - 2025-07-06 : 초기 생성 및 기본 버튼 기능 구현
+ *  - 2025-08-02 : 음성 권한 부여 설정 및 음성 인식 버튼 기능 구현
  *
  * TODO:
  *  - content 부분 클릭 시 버튼 이동 현상 수정 필요
