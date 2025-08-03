@@ -5,6 +5,7 @@
   기능 설명: 번역할 내용을 입력하는 EditText를 포함한 콘텐츠 영역 레이아웃
   수정 이력:
     - 2025-07-06 : 초기 레이아웃 작성
+    - 2025-08-03 : EditText -> CustomEditText로 변경
   TODO:
     - 입력 글자 수 제한 및 키보드 동작 개선 예정
 -->
@@ -24,7 +25,7 @@
         android:paddingEnd="20dp">
 
         <!-- EditText 포함 -->
-        <EditText
+        <com.talkgrow_.CustomEditText
             android:id="@+id/edit_text_content"
             android:layout_width="match_parent"
             android:layout_height="150dp"
@@ -38,7 +39,7 @@
             android:textColor="#000000"
             android:textAlignment="center"
             android:background="@android:color/white"
-            android:backgroundTint="@android:color/white"/>
+            android:backgroundTint="@android:color/white" />
     </LinearLayout>
 </ScrollView>
 
