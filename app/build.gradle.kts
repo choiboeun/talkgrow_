@@ -63,5 +63,13 @@ dependencies {
     implementation("androidx.camera:camera-extensions:$cameraxVersion")   // 카메라 확장 기능 라이브러리
 
     implementation("com.google.mediapipe:tasks-vision:0.10.7")            // Mediapipe Vision Tasks 라이브러리
+
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+
+    /* Retrofit, Gson, Coroutine 라이브러리 추가 */
+    implementation("com.squareup.retrofit2:retrofit:2.9.0")
+    implementation("com.squareup.retrofit2:converter-gson:2.9.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.6.4")
 }
 

@@ -17,6 +17,9 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import com.talkgrow_.util.TextPreprocessor
+import android.util.Log
+
 /**
  * 작성자: 조경주, 최보은
  * 작성일: 2025-07-06
@@ -117,15 +120,31 @@ class MainActivity : AppCompatActivity() {
         avatarButton.setOnClickListener {
             val content = contentEditText.text.toString().trim()
             if (content.isNotEmpty()) {
-                // 텍스트가 있는 경우 → 아바타 동작 실행 (기존 동작)
-                Toast.makeText(this, "아바타 생성 버튼이 클릭되었습니다.", Toast.LENGTH_SHORT).show()
+                try {
+                    val tokenLists = TextPreprocessor.processInputText(content)
 
-                // 여기에 아바타 생성 관련 기능이 들어가면 됨!
+                    // 디버깅 로그로 구조 확인
+                    Log.d("PreprocessResult", tokenLists.toString())
+
+                    // 보기 좋게 리스트 형태로 문자열 변환
+                    val resultString = tokenLists.joinToString(separator = "\n") { sentenceTokens ->
+                        sentenceTokens.joinToString(
+                            prefix = "[", postfix = "]", separator = ", "
+                        )
+                    }
+
+                    val intent = Intent(this, PreprocessResultActivity::class.java)
+                    intent.putExtra("processed_text", resultString)
+                    startActivity(intent)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    Toast.makeText(this, "오류 발생: ${e.message}", Toast.LENGTH_LONG).show()
+                }
             } else {
-                // 텍스트가 비어 있는 경우 → 안내 메시지 출력
                 Toast.makeText(this, "텍스트 또는 음성을 입력하세요", Toast.LENGTH_SHORT).show()
             }
         }
+
 
         // 카메라 버튼 클릭 시
         cameraButton.setOnClickListener {
