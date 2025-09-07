@@ -1,3 +1,13 @@
+<!-- app/src/main/res/values/strings.xml -->
 <resources>
-    <string name="app_name">talkgrow_</string>
+    <string name="app_name">TalkGrow</string>
+    <string name="camera_switch">카메라 전환</string>
+    <string name="initial_wait_text">결과 대기 중...</string>
+
+    <!-- camera_screen.xml에서 쓰는 문자열들 -->
+    <string name="header_title">TalkGrow</string>
+    <string name="btn_left_ksl">한국어 수어</string>
+    <string name="btn_right_ko">한국어</string>
+    <string name="translate">번역</string>
+    <string name="predict_wait">결과 대기 중...</string>
 </resources>

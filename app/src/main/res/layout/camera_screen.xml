@@ -1,41 +1,36 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-  작성자: 조경주, 최보은
-  작성일: 2025-07-06
-  기능 설명: CameraActivity 화면 레이아웃 - 상단 헤더, 카메라 프리뷰, 손 랜드마크 오버레이, 하단 번역 버튼 배치
-  수정 이력:
-    - 2025-07-06 : 초기 레이아웃 작성 및 주요 컴포넌트 배치
-  TODO:
-    - 번역 버튼 기능 연결 및 UI 개선 예정
--->
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/camera_layout"
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:fitsSystemWindows="true">
+    android:fitsSystemWindows="true"
+    android:background="@android:color/black">
 
-    <!-- 상단 헤더 영역: 타이틀과 언어 선택 버튼 그룹 포함 -->
+    <!-- 상단 헤더 -->
     <LinearLayout
         android:id="@+id/camera_header"
-        android:layout_width="match_parent"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:orientation="vertical"
         android:background="#D3E5FF"
         android:paddingTop="22dp"
         android:paddingBottom="10dp"
         android:gravity="center_horizontal"
-        android:elevation="10dp">
+        android:elevation="10dp"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
 
-        <!-- 타이틀 텍스트 -->
         <TextView
             android:id="@+id/header_title"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="TalkGrow"
             android:textSize="25sp"
-            android:textColor="#595959" />
+            android:textColor="#595959"/>
 
-        <!-- 언어 토글 버튼 영역 (가로 정렬) -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -44,7 +39,6 @@
             android:paddingTop="10dp"
             android:paddingBottom="10dp">
 
-            <!-- 왼쪽 버튼: 한국어 수어 -->
             <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
@@ -65,10 +59,9 @@
                     android:paddingBottom="6dp"
                     android:text="한국어 수어"
                     android:textColor="#595959"
-                    android:textSize="20sp" />
+                    android:textSize="20sp"/>
             </LinearLayout>
 
-            <!-- 토글 이미지 버튼 -->
             <LinearLayout
                 android:layout_width="55dp"
                 android:layout_height="wrap_content"
@@ -80,11 +73,10 @@
                     android:layout_height="60dp"
                     android:src="@drawable/toggle1"
                     android:background="@null"
-                    android:contentDescription="Toggle Button"
-                    android:scaleType="fitCenter" />
+                    android:contentDescription="카메라 전환"
+                    android:scaleType="fitCenter"/>
             </LinearLayout>
 
-            <!-- 오른쪽 버튼: 한국어 -->
             <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
@@ -105,39 +97,102 @@
                     android:paddingBottom="6dp"
                     android:text="한국어"
                     android:textColor="#595959"
-                    android:textSize="20sp" />
+                    android:textSize="20sp"/>
             </LinearLayout>
         </LinearLayout>
     </LinearLayout>
 
-    <!-- 카메라 프리뷰 화면 전체 배치 -->
-    <androidx.camera.view.PreviewView
-        android:id="@+id/previewView"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:background="#000000" />
+    <!-- 카메라 컨테이너: 헤더~하단바 사이를 '그대로' 꽉 채움 (비율 제한 제거) -->
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:id="@+id/camera_container"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:background="@android:color/black"
+        app:layout_constraintTop_toBottomOf="@id/camera_header"
+        app:layout_constraintBottom_toTopOf="@id/bottom_bar"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
 
-    <!-- 손 랜드마크 결과를 그려주는 투명 오버레이 -->
-    <com.talkgrow_.util.OverlayView
-        android:id="@+id/overlayView"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:background="@android:color/transparent" />
+        <androidx.camera.view.PreviewView
+            android:id="@+id/previewView"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:background="@android:color/black"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:scaleType="fillCenter"
+            app:implementationMode="performance"/>
 
-    <!-- 하단 고정 번역 버튼 -->
-    <Button
-        android:id="@+id/translate_button"
-        android:layout_width="wrap_content"
+        <com.talkgrow_.util.OverlayView
+            android:id="@+id/overlayView"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:background="@android:color/transparent"
+            app:layout_constraintTop_toTopOf="@id/previewView"
+            app:layout_constraintBottom_toBottomOf="@id/previewView"
+            app:layout_constraintStart_toStartOf="@id/previewView"
+            app:layout_constraintEnd_toEndOf="@id/previewView"/>
+
+        <!-- 결과/상태 텍스트는 프리뷰 '안'에 표시 -->
+        <TextView
+            android:id="@+id/resultTextView"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="결과 대기 중..."
+            android:textSize="18sp"
+            android:textColor="@android:color/white"
+            android:background="#80000000"
+            android:padding="8dp"
+            android:layout_marginBottom="12dp"
+            android:elevation="12dp"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"/>
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+    <!-- 하단 바 -->
+    <LinearLayout
+        android:id="@+id/bottom_bar"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:text="번역"
-        android:layout_gravity="bottom|end"
-        android:layout_marginBottom="30dp"
-        android:layout_marginEnd="20dp"
-        android:backgroundTint="#906BFF"
-        android:textColor="#FFFFFF"
-        android:elevation="5dp"
-        android:paddingHorizontal="20dp"
-        android:paddingVertical="10dp" />
+        android:orientation="vertical"
+        android:paddingTop="20dp"
+        android:paddingBottom="27dp"
+        android:gravity="center_horizontal"
+        android:background="#D3E5FF"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
 
-</FrameLayout>
+        <Button
+            android:id="@+id/translate_button"
+            android:layout_width="120dp"
+            android:layout_height="50dp"
+            android:text="번역"
+            android:textSize="15sp"
+            android:backgroundTint="#906BFF"
+            android:textColor="#FFFFFF"
+            android:elevation="15dp"
+            android:paddingHorizontal="30dp"
+            android:paddingVertical="5dp"
+           />
 
+    </LinearLayout>
+
+    <!-- 우상단 카메라 전환 -->
+    <ImageButton
+        android:id="@+id/switchCameraButton"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_margin="12dp"
+        android:background="@android:color/transparent"
+        android:src="@drawable/ic_cameraswitch"
+        android:contentDescription="카메라 전환"
+        android:clickable="true"
+        android:focusable="true"
+        android:elevation="20dp"
+        app:layout_constraintTop_toTopOf="@id/camera_header"
+        app:layout_constraintEnd_toEndOf="parent"/>
+</androidx.constraintlayout.widget.ConstraintLayout>

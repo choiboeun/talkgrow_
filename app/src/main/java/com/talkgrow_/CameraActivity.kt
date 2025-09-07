@@ -2,11 +2,17 @@ package com.talkgrow_
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.graphics.*
 import android.os.Bundle
+import android.util.Log
+import android.util.Size
+import android.widget.ImageButton
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.*
+import androidx.camera.core.AspectRatio.RATIO_4_3
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.app.ActivityCompat
@@ -14,211 +20,340 @@ import androidx.core.content.ContextCompat
 import com.google.mediapipe.framework.image.BitmapImageBuilder
 import com.google.mediapipe.tasks.components.containers.NormalizedLandmark
 import com.google.mediapipe.tasks.vision.core.RunningMode
-import com.talkgrow_.util.HandLandmarkerHelper
-import com.talkgrow_.util.HandLandmarkerHelper.ResultBundle
-import com.talkgrow_.util.MainViewModel
-import com.talkgrow_.util.OverlayView
+import com.talkgrow_.inference.TFLiteSignInterpreter
+import com.talkgrow_.util.*
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.util.ArrayDeque
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import kotlin.math.ln
 
-/**
- * 작성자: 조경주, 최보은
- * 작성일: 2025-07-06
- * 기능 설명: CameraActivity - 카메라 권한 확인, 실시간 카메라 프리뷰 및 손 인식 기능 구현
- *
- * 수정 이력:
- *  - 2025-07-06 : 초기 생성 및 기본 카메라, 손 랜드마크 탐지 기능 구현
- *
- * TODO:
- *  - 전면 후면 카메라 변환 기능 구현 필요
- *  - 손 감지 불가 메시지 딜레이 수정 필요
- *  - 손 인식 결과 UI 개선 및 추가 기능 개발 ( 결과 화면 )
- */
-class CameraActivity : AppCompatActivity(), HandLandmarkerHelper.LandmarkerListener {
+class CameraActivity :
+    AppCompatActivity(),
+    HandLandmarkerHelper.LandmarkerListener,
+    PoseLandmarkerHelper.LandmarkerListener,
+    FaceLandmarkerHelper.LandmarkerListener {
 
-    private val CAMERA_PERMISSION_CODE = 100
+    companion object {
+        private const val TAG = "CameraActivity"
+        private const val CAMERA_PERMISSION_CODE = 100
+    }
+
     private lateinit var previewView: PreviewView
-    private lateinit var handLandmarkerHelper: HandLandmarkerHelper
     private lateinit var overlay: OverlayView
+    private lateinit var resultTextView: TextView
+
+    private lateinit var handHelper: HandLandmarkerHelper
+    private lateinit var poseHelper: PoseLandmarkerHelper
+    private lateinit var faceHelper: FaceLandmarkerHelper
+    private lateinit var signInterpreter: TFLiteSignInterpreter
     private val viewModel: MainViewModel by viewModels()
+
+    private lateinit var analysisExecutor: ExecutorService
+    private var lensFacing = CameraSelector.LENS_FACING_FRONT
+
+    // sign model windowing
+    private val windowSize = 91
+    private val featureSize = 134
+    private val ring = ArrayDeque<FloatArray>(windowSize)
+
+    private var labels: List<String> = emptyList()
+    private var lastShownAt = 0L
+
+    private val majorityWindow = ArrayDeque<Int>()
+    private val majoritySize = 7
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.camera_screen)
 
-        previewView = findViewById(R.id.previewView)
-        checkCameraPermission()  // 카메라 권한 요청 또는 권한이 있을 경우 카메라 시작
+        previewView    = findViewById(R.id.previewView)
+        overlay        = findViewById(R.id.overlayView)
+        resultTextView = findViewById(R.id.resultTextView)
 
-        overlay = findViewById(R.id.overlayView)
+        findViewById<ImageButton?>(R.id.switchCameraButton)?.setOnClickListener { toggleLens() }
 
-        // HandLandmarkerHelper 초기화: Mediapipe 손 인식 라이브러리 설정
-        handLandmarkerHelper = HandLandmarkerHelper(
-            context = this,
-            runningMode = RunningMode.LIVE_STREAM,
-            currentDelegate = viewModel.currentDelegate,
-            minHandDetectionConfidence = viewModel.currentMinHandDetectionConfidence,
-            minHandTrackingConfidence = viewModel.currentMinHandTrackingConfidence,
-            minHandPresenceConfidence = viewModel.currentMinHandPresenceConfidence,
-            maxNumHands = viewModel.currentMaxHands,
-            handLandmarkerHelperListener = this
+        analysisExecutor = Executors.newSingleThreadExecutor()
+
+        try {
+            signInterpreter = TFLiteSignInterpreter(this)
+        } catch (e: Exception) {
+            Toast.makeText(this, "모델 초기화 실패: ${e.message}", Toast.LENGTH_LONG).show()
+            Log.e(TAG, "Interpreter init failed", e)
+            finish(); return
+        }
+
+        labels = loadLabelsFromAssets("label2id.json")
+
+        handHelper = HandLandmarkerHelper(
+            context = this, runningMode = RunningMode.LIVE_STREAM,
+            currentDelegate = viewModel.currentDelegate, handLandmarkerHelperListener = this
         )
+        poseHelper = PoseLandmarkerHelper(
+            context = this, runningMode = RunningMode.LIVE_STREAM,
+            currentDelegate = viewModel.currentDelegate, poseLandmarkerHelperListener = this
+        )
+        faceHelper = FaceLandmarkerHelper(
+            context = this, runningMode = RunningMode.LIVE_STREAM,
+            currentDelegate = viewModel.currentDelegate, faceLandmarkerHelperListener = this
+        )
+
+        // 미러링은 프리뷰/오버레이 둘 다 동일 적용
+        applyMirrorForUi()
+
+        checkCameraPermission()
     }
 
-    /**
-     * Mediapipe 손 인식 결과 처리 콜백
-     */
-    override fun onResults(resultBundle: ResultBundle) {
-        // 첫 번째 결과에서 첫 번째 손 랜드마크 가져오기 (없으면 null)
-        val landmark: NormalizedLandmark? =
-            resultBundle.results.firstOrNull()
-                ?.landmarks()
-                ?.firstOrNull()
-                ?.firstOrNull()
+    // ---------- Hand ----------
+    override fun onResults(resultBundle: HandLandmarkerHelper.ResultBundle) {
+        val first = resultBundle.results.firstOrNull()
+        val noHand = first == null || first.landmarks().isNullOrEmpty()
+        if (noHand) {
+            ring.clear(); majorityWindow.clear()
+            runOnUiThread {
+                overlay.setHandResults(null, resultBundle.inputImageHeight, resultBundle.inputImageWidth, RunningMode.LIVE_STREAM)
+                overlay.invalidate()
+                resultTextView.text = "손 없음"
+            }
+            return
+        }
 
         runOnUiThread {
-            // 손 인식 결과를 OverlayView에 전달하여 UI 업데이트
-            overlay.setResults(
-                resultBundle.results[0],
-                resultBundle.inputImageHeight,
-                resultBundle.inputImageWidth,
-                RunningMode.LIVE_STREAM
-            )
+            overlay.setHandResults(first, resultBundle.inputImageHeight, resultBundle.inputImageWidth, RunningMode.LIVE_STREAM)
+            overlay.invalidate()
+        }
 
-            // 손 랜드마크 좌표를 토스트로 간단히 표시하거나 손이 없으면 알림 표시
-            if (landmark != null) {
-                val text = "x=${"%.2f".format(landmark.x())}, y=${"%.2f".format(landmark.y())}"
-                Toast.makeText(this, text, Toast.LENGTH_SHORT).show()
+        val features = extractFeatures(resultBundle) ?: return
+        if (ring.size == windowSize) ring.removeFirst()
+        ring.addLast(features)
+
+        if (ring.size == windowSize) {
+            val input = Array(1) { Array(windowSize) { FloatArray(featureSize) } }
+            var t = 0
+            for (f in ring) { System.arraycopy(f, 0, input[0][t], 0, featureSize); t++ }
+
+            val probs = signInterpreter.runInference(input)
+            if (probs.isNotEmpty()) {
+                val (idx, _) = argmax(probs)
+
+                majorityWindow.addLast(idx)
+                if (majorityWindow.size > majoritySize) majorityWindow.removeFirst()
+                val finalIdx = majorityWindow.groupingBy { it }.eachCount().maxByOrNull { it.value }?.key ?: idx
+                val finalProb = probs[finalIdx]
+
+                val now = System.currentTimeMillis()
+                if (now - lastShownAt > 250) {
+                    lastShownAt = now
+                    val label = if (finalIdx in labels.indices) labels[finalIdx] else "ID $finalIdx"
+                    runOnUiThread {
+                        resultTextView.text = String.format("%.1f%% → %s", finalProb * 100f, label)
+                    }
+                }
             } else {
-                Toast.makeText(this, "손이 감지되지 않았습니다.", Toast.LENGTH_SHORT).show()
+                runOnUiThread { resultTextView.text = "출력 없음" }
             }
         }
     }
 
-    /**
-     * 카메라 권한 확인 및 요청
-     */
-    private fun checkCameraPermission() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
-            != PackageManager.PERMISSION_GRANTED
-        ) {
-            ActivityCompat.requestPermissions(
-                this,
-                arrayOf(Manifest.permission.CAMERA),
-                CAMERA_PERMISSION_CODE
-            )
-        } else {
-            startCamera()  // 권한이 이미 있으면 바로 카메라 시작
+    // ---------- Pose ----------
+    override fun onResults(resultBundle: PoseLandmarkerHelper.ResultBundle) {
+        runOnUiThread {
+            overlay.setPoseResults(resultBundle.results.firstOrNull(), resultBundle.inputImageHeight, resultBundle.inputImageWidth, RunningMode.LIVE_STREAM)
+            overlay.invalidate()
         }
     }
 
-    /**
-     * 권한 요청 결과 처리
-     */
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray
-    ) {
+    // ---------- Face ----------
+    override fun onResults(resultBundle: FaceLandmarkerHelper.ResultBundle) {
+        runOnUiThread {
+            overlay.setFaceResults(resultBundle.result, resultBundle.inputImageHeight, resultBundle.inputImageWidth, RunningMode.LIVE_STREAM)
+            overlay.invalidate()
+        }
+    }
+
+    override fun onError(error: String, errorCode: Int) {
+        Log.e(TAG, "MP error($errorCode): $error")
+        runOnUiThread { Toast.makeText(this, error, Toast.LENGTH_LONG).show() }
+    }
+
+    // ---------- labels ----------
+    private fun loadLabelsFromAssets(filename: String): List<String> = try {
+        val text = assets.open(filename).use { BufferedReader(InputStreamReader(it)).readText() }.trim()
+        if (text.startsWith("{")) {
+            val obj = JSONObject(text)
+            val pairs = mutableListOf<Pair<Int, String>>()
+            val it = obj.keys()
+            while (it.hasNext()) {
+                val label = it.next()
+                val idx = obj.optInt(label, -1)
+                if (idx >= 0) pairs += idx to label
+            }
+            pairs.sortedBy { it.first }.map { it.second }
+        } else {
+            val arr = JSONArray(text)
+            List(arr.length()) { i -> arr.optString(i, "ID $i") }
+        }
+    } catch (e: Exception) {
+        Log.e(TAG, "labels 읽기 실패: ${e.message}", e); emptyList()
+    }
+
+    // ---------- Hand features ----------
+    private fun extractFeatures(resultBundle: HandLandmarkerHelper.ResultBundle): FloatArray? {
+        val res = resultBundle.results.firstOrNull() ?: return null
+        val lmLists: List<List<NormalizedLandmark>> = res.landmarks() ?: return null
+        if (lmLists.isEmpty()) return null
+
+        val handed = res.handednesses()
+        val left = MutableList<NormalizedLandmark?>(21) { null }
+        val right = MutableList<NormalizedLandmark?>(21) { null }
+
+        if (!handed.isNullOrEmpty()) {
+            for (i in lmLists.indices) {
+                val name = handed.getOrNull(i)?.firstOrNull()?.categoryName() ?: ""
+                val pts = lmLists[i].take(21)
+                if (name.equals("Left", true)) pts.forEachIndexed { j, p -> left[j] = p }
+                else if (name.equals("Right", true)) pts.forEachIndexed { j, p -> right[j] = p }
+            }
+        } else {
+            lmLists.getOrNull(0)?.take(21)?.forEachIndexed { j, p -> left[j] = p }
+            lmLists.getOrNull(1)?.take(21)?.forEachIndexed { j, p -> right[j] = p }
+        }
+
+        fun to63(list: List<NormalizedLandmark?>): FloatArray {
+            val out = FloatArray(63); var k = 0
+            for (lm in list) {
+                if (lm != null) { out[k++] = lm.x(); out[k++] = lm.y(); out[k++] = lm.z() }
+                else { out[k++] = 0f; out[k++] = 0f; out[k++] = 0f }
+            }
+            return out
+        }
+
+        val f = FloatArray(featureSize)
+        System.arraycopy(to63(left),  0, f, 0, 63)
+        System.arraycopy(to63(right), 0, f, 63, 63)
+        return f
+    }
+
+    // ---------- utils ----------
+    private fun argmax(arr: FloatArray): Pair<Int, Float> {
+        var idx = 0; var best = Float.NEGATIVE_INFINITY
+        for (i in arr.indices) if (arr[i] > best) { best = arr[i]; idx = i }
+        return idx to best
+    }
+
+    private fun toggleLens() {
+        lensFacing = if (lensFacing == CameraSelector.LENS_FACING_BACK)
+            CameraSelector.LENS_FACING_FRONT else CameraSelector.LENS_FACING_BACK
+        applyMirrorForUi()
+        startCamera()
+    }
+
+    private fun applyMirrorForUi() {
+        val mirror = (lensFacing == CameraSelector.LENS_FACING_FRONT)
+        val scale = if (mirror) -1f else 1f
+        previewView.scaleX = scale
+        overlay.scaleX = scale
+        // 오버레이 스케일 규칙은 FIT 유지(프리뷰 컨테이너가 4:3이라 어긋나지 않음)
+        overlay.setScaleMode(OverlayView.ScaleMode.FIT)
+    }
+
+    private fun checkCameraPermission() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CAMERA), CAMERA_PERMISSION_CODE)
+        } else startCamera()
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == CAMERA_PERMISSION_CODE &&
-            grantResults.isNotEmpty() &&
-            grantResults[0] == PackageManager.PERMISSION_GRANTED
-        ) {
-            startCamera()  // 권한 허용 시 카메라 시작
+        if (requestCode == CAMERA_PERMISSION_CODE && grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            startCamera()
         } else {
             Toast.makeText(this, "카메라 권한이 필요합니다.", Toast.LENGTH_SHORT).show()
-            finish()  // 권한 거부 시 액티비티 종료
+            finish()
         }
     }
 
-    /**
-     * 카메라 프리뷰 및 이미지 분석 설정 후 실행
-     */
     private fun startCamera() {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
-
         cameraProviderFuture.addListener({
             val cameraProvider = cameraProviderFuture.get()
 
-            // 카메라 프리뷰 설정
-            val preview = Preview.Builder().build().also {
-                it.setSurfaceProvider(previewView.surfaceProvider)
-            }
+            val cameraSelector = CameraSelector.Builder().requireLensFacing(lensFacing).build()
 
-            // 이미지 분석 설정 및 분석기 등록
-            val imageAnalyzer = ImageAnalysis.Builder().build().also {
-                it.setAnalyzer(ContextCompat.getMainExecutor(this)) { imageProxy ->
-                    processImageProxy(imageProxy)
+            val preview = Preview.Builder()
+                .setTargetAspectRatio(RATIO_4_3) // 👈 종횡비만 설정
+                .setTargetRotation(previewView.display.rotation)
+                .build().also {
+                    it.setSurfaceProvider(previewView.surfaceProvider)
                 }
-            }
 
-            val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+            val analysis = ImageAnalysis.Builder()
+                .setTargetAspectRatio(RATIO_4_3) // 👈 해상도(setTargetResolution)와 함께 쓰지 마세요
+                .setTargetRotation(previewView.display.rotation)
+                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .build().also { ia ->
+                    ia.setAnalyzer(analysisExecutor) { imageProxy -> processImageProxy(imageProxy) }
+                }
 
             try {
-                cameraProvider.unbindAll()  // 기존 바인딩 해제
-                cameraProvider.bindToLifecycle(this, cameraSelector, preview, imageAnalyzer)  // 새로 바인딩
+                cameraProvider.unbindAll()
+                cameraProvider.bindToLifecycle(this, cameraSelector, preview, analysis)
             } catch (e: Exception) {
-                Toast.makeText(this, "카메라 오류: ${e.message}", Toast.LENGTH_SHORT).show()
+                Log.e(TAG, "bindToLifecycle failed: ${e.message}", e)
             }
-
         }, ContextCompat.getMainExecutor(this))
     }
 
-    /**
-     * ImageProxy를 Bitmap으로 변환 후 손 인식 비동기 처리 실행
-     */
     private fun processImageProxy(imageProxy: ImageProxy) {
-        val bitmap = imageProxy.toBitmap().rotate(imageProxy.imageInfo.rotationDegrees)
-        val mpImage = BitmapImageBuilder(bitmap).build()
-        val frameTime = System.currentTimeMillis()
-        handLandmarkerHelper.detectAsync(mpImage, frameTime)
-        imageProxy.close()  // 이미지 분석 완료 후 반드시 닫아줘야 함
+        try {
+            val rotation = imageProxy.imageInfo.rotationDegrees
+            val bitmap = imageProxy.toBitmap().rotate(rotation)
+            val mpImage = BitmapImageBuilder(bitmap).build()
+            val ts = System.currentTimeMillis()
+
+            handHelper.detectAsync(mpImage, ts)
+            poseHelper.detectAsync(mpImage, ts)
+            faceHelper.detectAsync(mpImage, ts)
+        } catch (t: Throwable) {
+            Log.e(TAG, "processImageProxy error: ${t.message}", t)
+        } finally {
+            imageProxy.close()
+        }
     }
 
-    /**
-     * ImageProxy를 Bitmap으로 변환하는 확장 함수
-     */
-    private fun ImageProxy.toBitmap(): android.graphics.Bitmap {
+    private fun ImageProxy.toBitmap(): Bitmap {
         val yBuffer = planes[0].buffer
         val uBuffer = planes[1].buffer
         val vBuffer = planes[2].buffer
-
         val ySize = yBuffer.remaining()
         val uSize = uBuffer.remaining()
         val vSize = vBuffer.remaining()
-
         val nv21 = ByteArray(ySize + uSize + vSize)
         yBuffer.get(nv21, 0, ySize)
         vBuffer.get(nv21, ySize, vSize)
         uBuffer.get(nv21, ySize + vSize, uSize)
-
-        val yuvImage = android.graphics.YuvImage(
-            nv21,
-            android.graphics.ImageFormat.NV21,
-            width,
-            height,
-            null
-        )
+        val yuvImage = YuvImage(nv21, ImageFormat.NV21, width, height, null)
         val out = java.io.ByteArrayOutputStream()
-        yuvImage.compressToJpeg(android.graphics.Rect(0, 0, width, height), 100, out)
-        val imageBytes = out.toByteArray()
-        return android.graphics.BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+        yuvImage.compressToJpeg(Rect(0, 0, width, height), 85, out)
+        val bytes = out.toByteArray()
+        return BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
     }
 
-    /**
-     * Bitmap 이미지를 주어진 각도로 회전하는 확장 함수
-     */
-    private fun android.graphics.Bitmap.rotate(degrees: Int): android.graphics.Bitmap {
-        val matrix = android.graphics.Matrix()
-        matrix.postRotate(degrees.toFloat())
-        return android.graphics.Bitmap.createBitmap(this, 0, 0, width, height, matrix, true)
+    private fun Bitmap.rotate(degrees: Int): Bitmap {
+        if (degrees == 0) return this
+        val m = Matrix().apply { postRotate(degrees.toFloat()) }
+        return Bitmap.createBitmap(this, 0, 0, width, height, m, true)
     }
 
-    /**
-     * HandLandmarkerHelper 에러 발생 시 호출되는 콜백
-     */
-    override fun onError(error: String, errorCode: Int) {
-        runOnUiThread {
-            Toast.makeText(this, "에러 발생: $error ($errorCode)", Toast.LENGTH_LONG).show()
-        }
+    override fun onDestroy() {
+        super.onDestroy()
+        try { handHelper.clearHandLandmarker() } catch (_: Throwable) {}
+        try { poseHelper.clearPoseLandmarker() } catch (_: Throwable) {}
+        try { faceHelper.clearFaceLandmarker() } catch (_: Throwable) {}
+        try { signInterpreter.close() } catch (_: Throwable) {}
+        try { analysisExecutor.shutdownNow() } catch (_: Throwable) {}
     }
 }
-

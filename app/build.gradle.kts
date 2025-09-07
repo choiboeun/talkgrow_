@@ -1,75 +1,86 @@
 plugins {
-    alias(libs.plugins.android.application)   // 안드로이드 애플리케이션 플러그인 적용
-    alias(libs.plugins.kotlin.android)        // 코틀린 안드로이드 플러그인 적용
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
 }
 
 android {
-    namespace = "com.talkgrow_"               // 앱 패키지 네임스페이스
-    compileSdk = 35                           // 컴파일 SDK 버전
+    namespace = "com.talkgrow_"
+    compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.talkgrow_"      // 앱 고유 아이디
-        minSdk = 24                          // 최소 지원 SDK 버전
-        targetSdk = 35                       // 타겟 SDK 버전
-        versionCode = 1                      // 버전 코드 (숫자)
-        versionName = "1.0"                  // 버전 이름 (문자열)
+        applicationId = "com.talkgrow_"
+        minSdk = 24
+        targetSdk = 35
+        versionCode = 1
+        versionName = "1.0"
 
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"  // 테스트 러너 설정
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false           // 릴리즈 빌드 시 코드 축소 사용 여부
+            isMinifyEnabled = false
             proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),  // 프로가드 기본 파일
-                "proguard-rules.pro"                                      // 커스텀 프로가드 규칙 파일
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
             )
         }
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_1_8    // 자바 소스 호환 버전
-        targetCompatibility = JavaVersion.VERSION_1_8    // 자바 타겟 호환 버전
+        sourceCompatibility = JavaVersion.VERSION_1_8
+        targetCompatibility = JavaVersion.VERSION_1_8
+    }
+    kotlinOptions {
+        jvmTarget = "1.8"
     }
 
-    kotlinOptions {
-        jvmTarget = "1.8"                                 // 코틀린 JVM 타겟 버전
-    }
     buildFeatures {
-        viewBinding = true                                // 뷰 바인딩 활성화
+        viewBinding = true
+    }
+
+    // .tflite, .task 파일 압축 금지
+    androidResources {
+        noCompress += listOf("tflite", "task")
     }
 }
 
-// CameraX 라이브러리 버전 정의
+// CameraX 버전
 val cameraxVersion = "1.3.0"
 
 dependencies {
-    implementation(libs.androidx.core.ktx)               // 코틀린 확장 라이브러리
-    implementation(libs.androidx.appcompat)               // 앱호환 라이브러리
-    implementation(libs.material)                         // 머티리얼 디자인 라이브러리
-    implementation(libs.androidx.activity)                // 액티비티 라이브러리
-    implementation(libs.androidx.constraintlayout)        // 제약 레이아웃 라이브러리
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.appcompat)
+    implementation(libs.material)
+    implementation(libs.androidx.activity)
+    implementation(libs.androidx.constraintlayout)
 
-    testImplementation(libs.junit)                        // 단위 테스트용 JUnit
-    androidTestImplementation(libs.androidx.junit)        // 안드로이드 테스트용 JUnit
-    androidTestImplementation(libs.androidx.espresso.core) // UI 테스트용 Espresso
+    testImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.androidx.espresso.core)
 
-    /* CameraX 의존성 */
-    implementation("androidx.camera:camera-core:$cameraxVersion")         // CameraX 핵심 라이브러리
-    implementation("androidx.camera:camera-camera2:$cameraxVersion")      // Camera2 API 지원
-    implementation("androidx.camera:camera-lifecycle:$cameraxVersion")    // 생명주기 연동 라이브러리
-    implementation("androidx.camera:camera-video:$cameraxVersion")        // 비디오 녹화 지원 라이브러리
-    implementation("androidx.camera:camera-view:$cameraxVersion")         // 카메라 뷰 지원 라이브러리
-    implementation("androidx.camera:camera-extensions:$cameraxVersion")   // 카메라 확장 기능 라이브러리
+    // CameraX
+    implementation("androidx.camera:camera-core:$cameraxVersion")
+    implementation("androidx.camera:camera-camera2:$cameraxVersion")
+    implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
+    implementation("androidx.camera:camera-video:$cameraxVersion")
+    implementation("androidx.camera:camera-view:$cameraxVersion")
+    implementation("androidx.camera:camera-extensions:$cameraxVersion")
 
-    implementation("com.google.mediapipe:tasks-vision:0.10.7")            // Mediapipe Vision Tasks 라이브러리
+    // MediaPipe Tasks Vision (Hand, Pose, Face Landmarker)
+    implementation("com.google.mediapipe:tasks-vision:0.10.7")
 
+    // Lifecycle + Coroutine
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 
-    /* Retrofit, Gson, Coroutine 라이브러리 추가 */
+    // TensorFlow Lite (모델 연결용)
+    implementation("org.tensorflow:tensorflow-lite:2.14.0")
+    // 선택적으로 GPU delegate / SelectOps 등도 추가 가능
+    implementation("org.tensorflow:tensorflow-lite-gpu:2.14.0")
+    implementation("org.tensorflow:tensorflow-lite-select-tf-ops:2.14.0")
+
+    // Retrofit / Gson (네 기존 네트워크 코드용)
     implementation("com.squareup.retrofit2:retrofit:2.9.0")
     implementation("com.squareup.retrofit2:converter-gson:2.9.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.6.4")
 }
-

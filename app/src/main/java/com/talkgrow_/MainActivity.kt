@@ -8,6 +8,7 @@ import android.os.Bundle
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
+import android.util.Log
 import android.view.View
 import android.view.animation.Animation
 import android.view.animation.AnimationUtils
@@ -17,42 +18,25 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import com.talkgrow_.inference.TFLiteSignInterpreter
 import com.talkgrow_.util.TextPreprocessor
-import android.util.Log
+import kotlin.random.Random
 
-/**
- * 작성자: 조경주, 최보은
- * 작성일: 2025-07-06
- * 기능 설명: MainActivity - 앱의 메인 화면을 구성하고 버튼 클릭 이벤트를 처리함
- *
- * 수정 이력:
- *  - 2025-07-06 : 초기 생성 및 기본 버튼 기능 구현
- *  - 2025-08-02 : 음성 권한 부여 설정 및 음성 인식 버튼 기능 구현
- *  - 2025-08-03 : 음성 인식 버튼 효과 버튼 효과,
- *                  한국어 수어 -> 한국어 일때만 '수어번역 카메라' 버튼 클릭 가능,
- *                  한국어 -> 한국어 수어 일때만 '아바타 생성' 버튼 클릭 가능,
- *                  이 외에 언어 재설정 알림 기능
- *  - 2025-08-04 :
- *
- * TODO:
- *  - content 부분 클릭 시 버튼 이동 현상 수정 필요
- *  - 음성 인식 기능 추가 필요, 음성 권환 확인 필요
- *  - 아바타 생성 화면 이동 기능 구현 필요
- */
 class MainActivity : AppCompatActivity() {
 
-    private val REQUEST_RECORD_AUDIO_PERMISSION = 200
-    private lateinit var micButton: ImageButton
+    private val REQ_RECORD_AUDIO = 200
+    private val REQ_CAMERA = 201
 
+    private lateinit var micButton: ImageButton
     private lateinit var speechRecognizer: SpeechRecognizer
     private lateinit var contentEditText: EditText
-
     private var pulseAnimation: Animation? = null
 
-    // true = 한국어 수어 → 한국어 모드
-    // false = 한국어 → 한국어 수어 모드
-    private var isKoreanSignToKorean = true
+    // (선택) 수어 모델 인터프리터 — 모델 파일이 없으면 null 유지
+    private var signInterpreter: TFLiteSignInterpreter? = null
 
+    // true = 한국어 수어 → 한국어 / false = 한국어 → 한국어 수어
+    private var isKoreanSignToKorean = true
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -65,41 +49,30 @@ class MainActivity : AppCompatActivity() {
         contentEditText = findViewById(R.id.edit_text_content)
         pulseAnimation = AnimationUtils.loadAnimation(this, R.anim.voice_pulse)
 
+        // (선택) TFLite 모델 로드 — 파일이 없으면 조용히 스킵
+        tryInitTflite()
 
-
-
-        // 시스템 바 패딩 조절
+        // 시스템 바 패딩
         ViewCompat.setOnApplyWindowInsetsListener(rootView) { view, insets ->
             val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            view.setPadding(
-                systemBars.left,
-                systemBars.top,
-                systemBars.right,
-                systemBars.bottom
-            )
+            view.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
             insets
         }
 
-        // 키보드 올라왔는지 감지해서 버튼 숨기기
+        // 키보드에 따라 버튼 숨김/보임
         rootView.viewTreeObserver.addOnGlobalLayoutListener {
             val rect = Rect()
             rootView.getWindowVisibleDisplayFrame(rect)
-
             val screenHeight = rootView.rootView.height
             val keypadHeight = screenHeight - rect.bottom
-
             if (keypadHeight > screenHeight * 0.15) {
-                // 키보드 올라온 상태
                 avatarButton.visibility = View.GONE
                 cameraButton.visibility = View.GONE
             } else {
-                // 키보드 내려간 상태
                 avatarButton.visibility = View.VISIBLE
                 cameraButton.visibility = View.VISIBLE
             }
-            //micButton은 항상 보이게
             micButton.visibility = View.VISIBLE
-
         }
 
         // 헤더 버튼들
@@ -111,28 +84,19 @@ class MainActivity : AppCompatActivity() {
             val tempText = buttonLeft.text
             buttonLeft.text = buttonRight.text
             buttonRight.text = tempText
-
-            // 토글 시마다 상태 바꾸기
             isKoreanSignToKorean = !isKoreanSignToKorean
         }
 
-        // 아바타 버튼 클릭 시
+        // 아바타 버튼
         avatarButton.setOnClickListener {
             val content = contentEditText.text.toString().trim()
             if (content.isNotEmpty()) {
                 try {
                     val tokenLists = TextPreprocessor.processInputText(content)
-
-                    // 디버깅 로그로 구조 확인
                     Log.d("PreprocessResult", tokenLists.toString())
-
-                    // 보기 좋게 리스트 형태로 문자열 변환
-                    val resultString = tokenLists.joinToString(separator = "\n") { sentenceTokens ->
-                        sentenceTokens.joinToString(
-                            prefix = "[", postfix = "]", separator = ", "
-                        )
+                    val resultString = tokenLists.joinToString("\n") { s ->
+                        s.joinToString(prefix = "[", postfix = "]", separator = ", ")
                     }
-
                     val intent = Intent(this, PreprocessResultActivity::class.java)
                     intent.putExtra("processed_text", resultString)
                     startActivity(intent)
@@ -145,116 +109,146 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-
-        // 카메라 버튼 클릭 시
+        // 카메라 버튼 → CAMERA 권한 확인 후 CameraActivity 이동
         cameraButton.setOnClickListener {
-            if (isKoreanSignToKorean) {
-                // 한국어 수어->한국어 모드일 때 정상 실행
-                val intent = Intent(this, CameraActivity::class.java)
-                startActivity(intent)
-            } else {
-                // 한국어->한국어 수어 모드일 때 경고 메시지
+            if (!isKoreanSignToKorean) {
                 Toast.makeText(this, "언어 설정을 다시 해주세요.", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
             }
+            checkCameraPermissionAndStart()
         }
 
         // content 입력창 터치 시
         contentEditText.setOnTouchListener { v, event ->
-            if (event.action == android.view.MotionEvent.ACTION_UP) {
-                v.performClick()  // 클릭 이벤트 처리 알림
-            }
-
+            if (event.action == android.view.MotionEvent.ACTION_UP) v.performClick()
             if (isKoreanSignToKorean) {
                 Toast.makeText(this, "언어 설정을 다시 해주세요.", Toast.LENGTH_SHORT).show()
-                true  // 이벤트 소비(터치 막음)
+                true
             } else {
-                false // 터치 이벤트 정상 처리
+                false
             }
         }
 
-
-        // 마이크 버튼 클릭
+        // 마이크 버튼
         micButton.setOnClickListener {
             if (isKoreanSignToKorean) {
-                // 한국어 수어->한국어 모드일 때 경고 메시지
                 Toast.makeText(this, "언어 설정을 다시 해주세요.", Toast.LENGTH_SHORT).show()
             } else {
-                // 마이크 버튼 클릭 → 음성 권한 요청
                 checkAudioPermission()
             }
         }
 
-        // SpeechRecognizer 초기화
+        // SpeechRecognizer
         speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this)
         speechRecognizer.setRecognitionListener(object : RecognitionListener {
             override fun onReadyForSpeech(params: Bundle?) {
                 Toast.makeText(this@MainActivity, "음성 인식 시작...", Toast.LENGTH_SHORT).show()
-                micButton.startAnimation(pulseAnimation)  //  애니메이션 시작
-
-                // 마이크 버튼 색상 변경 (진행 중일 때)
-                micButton.setColorFilter(ContextCompat.getColor(this@MainActivity, R.color.voice_active))
+                micButton.startAnimation(pulseAnimation)
+                micButton.setColorFilter(
+                    ContextCompat.getColor(this@MainActivity, R.color.voice_active)
+                )
             }
-
             override fun onBeginningOfSpeech() {}
             override fun onRmsChanged(rmsdB: Float) {}
             override fun onBufferReceived(buffer: ByteArray?) {}
             override fun onEndOfSpeech() {
-                micButton.clearAnimation()  // 인식 끝나면 애니메이션 중지
-                micButton.clearColorFilter()  // 색상 초기화 (원래 색으로 복원)
+                micButton.clearAnimation()
+                micButton.clearColorFilter()
             }
             override fun onError(error: Int) {
-                micButton.clearAnimation()  // 에러 나도 중지
-                micButton.clearColorFilter()  // 에러 시에도 복원
+                micButton.clearAnimation()
+                micButton.clearColorFilter()
                 Toast.makeText(this@MainActivity, "음성 인식 실패", Toast.LENGTH_SHORT).show()
             }
-
             override fun onResults(results: Bundle) {
-                micButton.clearAnimation()  // 결과 나오면 중지
-                micButton.clearColorFilter()  // 결과 처리 후 복원
-
+                micButton.clearAnimation()
+                micButton.clearColorFilter()
                 val matches = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                 if (!matches.isNullOrEmpty()) {
                     val currentText = contentEditText.text.toString()
-                    val newText = if (currentText.isEmpty()) {
-                        matches[0]
-                    } else {
-                        "$currentText ${matches[0]}"
-                    }
+                    val newText =
+                        if (currentText.isEmpty()) matches[0] else "$currentText ${matches[0]}"
                     contentEditText.setText(newText)
-                    contentEditText.setSelection(newText.length) // 커서를 맨 뒤로 이동
+                    contentEditText.setSelection(newText.length)
                 }
             }
-
             override fun onPartialResults(partialResults: Bundle?) {}
             override fun onEvent(eventType: Int, params: Bundle?) {}
         })
     }
 
-
-    // 음성 권한 확인 함수
-    private fun checkAudioPermission() {
-        val permission = Manifest.permission.RECORD_AUDIO
-        if (ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, arrayOf(permission), REQUEST_RECORD_AUDIO_PERMISSION)
-        } else {
-            startSpeechRecognition()
+    // ─────────────────────────────────────────────
+    // TFLite: 파일 없으면 조용히 스킵 (학습 완료 후 연결)
+    // ─────────────────────────────────────────────
+    private fun tryInitTflite() {
+        try {
+            signInterpreter = TFLiteSignInterpreter(this)
+            Log.d("TalkGrow", "TFLite 모델 로딩 성공")
+            sanityRunOnce() // 간단 검증
+        } catch (e: Exception) {
+            // 모델 미배포 상태 등… 조용히 통과 (크래시 방지)
+            Log.w("TalkGrow", "TFLite 초기화 생략/실패: ${e.message}")
+            signInterpreter = null
         }
     }
 
-    // 권한 요청 결과 처리
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+    // 더미 입력으로 1회 추론 → Logcat에서 Top-5 확인
+    private fun sanityRunOnce() {
+        val itp = signInterpreter ?: return
+        val dummy = Array(1) { Array(101) { FloatArray(126) } }
+        for (t in 0 until 101) for (c in 0 until 126) dummy[0][t][c] = Random.nextFloat()
+        val logits = itp.runInference(dummy)
+        val top5 = logits.mapIndexed { idx, v -> idx to v }
+            .sortedByDescending { it.second }
+            .take(5)
+        Log.d("TalkGrow", "TFLite Top-5: $top5")
+        Toast.makeText(this, "모델 로드 완료 (Logcat 확인)", Toast.LENGTH_SHORT).show()
+    }
 
-        if (requestCode == REQUEST_RECORD_AUDIO_PERMISSION) {
+    // ─────────────────────────────────────────────
+    // 권한 처리
+    // ─────────────────────────────────────────────
+    private fun checkAudioPermission() {
+        val perm = Manifest.permission.RECORD_AUDIO
+        if (ContextCompat.checkSelfPermission(this, perm)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            ActivityCompat.requestPermissions(this, arrayOf(perm), REQ_RECORD_AUDIO)
+        } else startSpeechRecognition()
+    }
+
+    private fun checkCameraPermissionAndStart() {
+        val perm = Manifest.permission.CAMERA
+        if (ContextCompat.checkSelfPermission(this, perm)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            ActivityCompat.requestPermissions(this, arrayOf(perm), REQ_CAMERA)
+        } else {
+            startCameraActivity()
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQ_RECORD_AUDIO) {
             if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 startSpeechRecognition()
             } else {
                 Toast.makeText(this, "음성 권한이 거부되었습니다.", Toast.LENGTH_SHORT).show()
             }
+        } else if (requestCode == REQ_CAMERA) {
+            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                startCameraActivity()
+            } else {
+                Toast.makeText(this, "카메라 권한이 거부되었습니다.", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
-    // 음성 인식 시작
     private fun startSpeechRecognition() {
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
@@ -263,8 +257,14 @@ class MainActivity : AppCompatActivity() {
         speechRecognizer.startListening(intent)
     }
 
+    private fun startCameraActivity() {
+        val intent = Intent(this, CameraActivity::class.java)
+        startActivity(intent)
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         speechRecognizer.destroy()
+        // (필요 시) signInterpreter?.close()  // close 추가했으면 활성화
     }
 }
