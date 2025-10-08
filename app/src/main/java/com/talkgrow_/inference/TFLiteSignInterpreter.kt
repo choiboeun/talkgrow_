@@ -1,112 +1,87 @@
 package com.talkgrow_.inference
 
 import android.content.Context
-import org.json.JSONObject
+import android.util.Log
 import org.tensorflow.lite.Interpreter
-import java.io.BufferedReader
-import java.io.InputStreamReader
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
+import org.tensorflow.lite.support.common.FileUtil
+import org.tensorflow.lite.support.tensorbuffer.TensorBuffer
+import org.tensorflow.lite.DataType
+import kotlin.math.exp
+import kotlin.math.max
 
-class TFLiteSignInterpreter(context: Context) {
-
-    private val T = 91
-    private val D = 134
+class TFLiteSignInterpreter(
+    context: Context,
+    private val modelAssetName: String = "export_infer.tflite",
+) {
+    companion object { private const val TAG = "TFLite OK" }
 
     private val interpreter: Interpreter
-    private val mean = FloatArray(D) { 0f }
-    private val std  = FloatArray(D) { 1f }
-    private val id2label: List<String>
-
-    // ===== 디버그 유틸 =====
-    fun outputClasses(): Int = id2label.size
-
-    /** Top-K 추출 */
-    fun topK(probs: FloatArray, k: Int = 5): List<Pair<Int, Float>> {
-        val idxs = probs.indices.sortedByDescending { probs[it] }.take(k)
-        return idxs.map { it to probs[it] }
-    }
-
-    /** 엔트로피(불확실도) — 자연로그 ln 사용, Double로 계산 후 Float로 변환 */
-    fun entropy(probs: FloatArray): Float {
-        var e = 0.0
-        for (p in probs) {
-            val pp = p.toDouble()
-            if (pp > 1e-9) e -= pp * kotlin.math.ln(pp)
-        }
-        return e.toFloat()
-    }
+    val inputShape: IntArray
+    val outputShape: IntArray
+    val seqLen: Int
+    val featDim: Int
+    val numClasses: Int
 
     init {
-        // 1) 모델 로드
-        val modelBytes = context.assets.open("model.tflite").use { it.readBytes() }
-        val modelBuffer = ByteBuffer.allocateDirect(modelBytes.size)
-            .order(ByteOrder.nativeOrder())
-            .apply { put(modelBytes); rewind() }
+        val model = FileUtil.loadMappedFile(context, modelAssetName)
+        interpreter = Interpreter(model, Interpreter.Options())
 
-        interpreter = Interpreter(modelBuffer, Interpreter.Options().apply {
-            setNumThreads(Runtime.getRuntime().availableProcessors().coerceAtMost(4))
-        })
+        inputShape  = interpreter.getInputTensor(0).shape()   // [1, L, F]
+        outputShape = interpreter.getOutputTensor(0).shape()  // [1, C]
+        seqLen = inputShape.getOrNull(1) ?: 1
+        featDim = inputShape.getOrNull(2) ?: 1
+        numClasses = outputShape.getOrNull(1) ?: 1
 
-        // 2) scaler.json 로드 (mean/std)
-        runCatching {
-            val txt = context.assets.open("scaler.json")
-                .use { BufferedReader(InputStreamReader(it)).readText() }
-            val obj = JSONObject(txt)
-            val mArr = obj.getJSONArray("mean")
-            val sArr = obj.getJSONArray("std")
-            for (i in 0 until kotlin.math.min(D, mArr.length())) {
-                mean[i] = mArr.getDouble(i).toFloat()
-            }
-            for (i in 0 until kotlin.math.min(D, sArr.length())) {
-                std[i]  = sArr.getDouble(i).toFloat()
-            }
-        }
-
-        // 3) label2id.json → id2label
-        id2label = runCatching {
-            val txt = context.assets.open("label2id.json")
-                .use { BufferedReader(InputStreamReader(it)).readText() }
-            val obj = JSONObject(txt)
-            val tmp = mutableListOf<Pair<Int, String>>()
-            val it = obj.keys()
-            while (it.hasNext()) {
-                val label = it.next()
-                val idx   = obj.getInt(label)
-                tmp += idx to label
-            }
-            tmp.sortedBy { it.first }.map { it.second }
-        }.getOrElse { emptyList() }
+        Log.i(TAG, "input=${inputShape.contentToString()} output=${outputShape.contentToString()} " +
+                "seqLen=$seqLen featDim=$featDim classes=$numClasses")
     }
 
-    fun labels(): List<String> = id2label
-
-    /** 입력: (1, 91, 134) float32 → 출력: (numClasses) float32 */
-    fun runInference(seq: Array<Array<FloatArray>>): FloatArray {
-        require(seq.size == 1 && seq[0].size == T && seq[0][0].size == D) { "Input must be (1,$T,$D)" }
-
-        // (1,T,D) 표준화
-        val input = ByteBuffer.allocateDirect(4 * T * D).order(ByteOrder.nativeOrder())
-        for (i in 0 until T) {
-            for (j in 0 until D) {
-                val x = seq[0][i][j]
-                val s = if (std[j] == 0f) 1f else std[j]
-                input.putFloat((x - mean[j]) / s)
-            }
+    /** features: 길이 == seqLen * featDim; 반환: (최대 인덱스, softmax 확률배열[0..1]) */
+    fun infer(features: FloatArray): Pair<Int, FloatArray> {
+        val need = seqLen * featDim
+        val inArr = if (features.size == need) features else {
+            val dst = FloatArray(need)
+            val src = if (features.size > need)
+                features.copyOfRange(features.size - need, features.size) else features
+            val start = need - src.size
+            System.arraycopy(src, 0, dst, start, src.size)
+            dst
         }
-        input.rewind()
 
-        val numClasses = id2label.size.takeIf { it > 0 } ?: 3297
-        val output = ByteBuffer.allocateDirect(4 * numClasses).order(ByteOrder.nativeOrder())
-        output.rewind()
+        val input = TensorBuffer.createFixedSize(intArrayOf(1, seqLen, featDim), DataType.FLOAT32)
+        input.loadArray(inArr)
 
-        interpreter.run(input, output)
-        output.rewind()
+        val output = TensorBuffer.createFixedSize(intArrayOf(1, numClasses), DataType.FLOAT32)
+        runCatching { interpreter.run(input.buffer, output.buffer.rewind()) }
+            .onFailure { e -> Log.e(TAG, "run failed: ${e.message}", e) }
 
-        val probs = FloatArray(numClasses)
-        for (i in 0 until numClasses) probs[i] = output.float
-        return probs
+        val logits = output.floatArray
+        // ---- softmax (log-sum-exp 안정화) ----
+        var maxLogit = Float.NEGATIVE_INFINITY
+        for (v in logits) if (v > maxLogit) maxLogit = v
+        var sum = 0.0
+        val probs = FloatArray(logits.size)
+        for (i in logits.indices) {
+            val e = exp((logits[i] - maxLogit).toDouble())
+            sum += e
+            probs[i] = e.toFloat()
+        }
+        if (sum <= 0.0) {
+            val p = 1f / max(1, probs.size)
+            for (i in probs.indices) probs[i] = p
+        } else {
+            val inv = 1.0 / sum
+            for (i in probs.indices) probs[i] = (probs[i] * inv).toFloat()
+        }
+
+        var bestI = 0
+        var bestV = -1f
+        for (i in probs.indices) {
+            val v = probs[i]
+            if (v > bestV) { bestV = v; bestI = i }
+        }
+        return bestI to probs
     }
 
-    fun close() = interpreter.close()
+    fun close() = runCatching { interpreter.close() }.let { }
 }
