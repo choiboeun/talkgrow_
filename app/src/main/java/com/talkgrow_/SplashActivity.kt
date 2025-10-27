@@ -22,11 +22,18 @@ class SplashActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_splash)
 
-        // 1. 1.5초 딜레이 후 메인 화면으로 전환
+        // 1.5초 후 메인으로 전환하되, 메인을 "새 태스크의 루트"로 만든다.
         Handler(Looper.getMainLooper()).postDelayed({
-            val intent = Intent(this, MainActivity::class.java)
-            startActivity(intent)
-            finish()  // SplashActivity 종료하여 뒤로가기 시 다시 스플래시가 안 보이도록 함
+            startActivity(
+                Intent(this, MainActivity::class.java).apply {
+                    addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK or     // 새 태스크 생성
+                                Intent.FLAG_ACTIVITY_CLEAR_TASK       // 기존 태스크 비우기
+                    )
+                }
+            )
+            // 스플래시는 백스택에 남기지 않음
+            finish()
         }, 1500)
     }
 }

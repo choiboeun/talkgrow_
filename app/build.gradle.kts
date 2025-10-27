@@ -15,8 +15,17 @@ android {
         versionName = "1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        ndk { abiFilters += listOf("arm64-v8a") }
+
+        // ▼ 추가: 앱과 unityLibrary의 ABI를 정확히 맞춘다
+        ndk {
+            abiFilters.clear()
+            abiFilters += listOf("arm64-v8a")
+        }
+
+
     }
+
+
 
     buildTypes {
         release {
@@ -30,20 +39,83 @@ android {
     }
 
     compileOptions {
+
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+
     }
     kotlinOptions { jvmTarget = "17" }
 
-    buildFeatures { viewBinding = true }
 
-    androidResources { noCompress += listOf("tflite", "task", "json", "bin") }
+
+
+    buildFeatures {
+        viewBinding = true
+    }
+
+    // Unity 데이터 파일 압축 금지 (라이브러리 + 앱 모두에 넣어두면 안전)
+    androidResources {
+        noCompress += listOf(
+            ".unity3d",
+            ".ress",
+            ".resource",
+            ".obb",
+            ".bundle",
+            ".unityexp",
+            "tflite",
+            "task",
+            "json",
+            "bin"
+        )
+    }
 
     packaging {
         resources {
             excludes += setOf("META-INF/LICENSE*", "META-INF/AL2.0", "META-INF/LGPL2.1")
         }
+
     }
+
+    // ★ 추가: Unity .so 로딩 호환(신규 Android에서도 안전)
+    packagingOptions {
+        // 네이티브 so 충돌 회피
+        jniLibs {
+            useLegacyPackaging = true
+            pickFirsts += listOf(
+                "**/libil2cpp.so",
+                "**/libmain.so",
+                "**/libunity.so",
+                "**/lib_burst_generated.so",
+                "**/libc++_shared.so" // TF/CameraX/Unity가 중복으로 넣는 대표 so
+            )
+        }
+
+        // 리소스(META-INF 등) 중복 제거
+        resources {
+            excludes += listOf(
+                // 라이선스/메타데이터
+                "META-INF/DEPENDENCIES",
+                "META-INF/DEPENDENCIES.*",
+                "META-INF/LICENSE",
+                "META-INF/LICENSE.*",
+                "META-INF/NOTICE",
+                "META-INF/NOTICE.*",
+                "META-INF/AL2.0",
+                "META-INF/LGPL2.1",
+                "META-INF/*.version",
+                "META-INF/proguard/**",
+
+                // Kotlin/AndroidX 메타
+                "META-INF/*.kotlin_module",
+                "META-INF/androidx.*.version",
+                "META-INF/com.android.tools/**",
+
+                // 가끔 중복나는 인덱스
+                "META-INF/INDEX.LIST"
+            )
+        }
+    }
+
 }
 
 val cameraxVersion = "1.3.4"
@@ -83,7 +155,9 @@ dependencies {
 
     implementation("com.squareup.retrofit2:retrofit:2.9.0")
     implementation("com.squareup.retrofit2:converter-gson:2.9.0")
+
     implementation("com.squareup.okhttp3:logging-interceptor:4.11.0")
+    implementation(project(":unityLibrary"))
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
@@ -104,4 +178,5 @@ configurations.configureEach {
             "com.google.mediapipe:framework:0.10.14"
         )
     }
+
 }

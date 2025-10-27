@@ -1,94 +1,141 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:background="#000000"
+    android:clipToPadding="false"
     tools:context=".AvatarGenerateActivity">
 
-    <!-- 1) 전체화면 플레이어 호스트 (영상/아바타가 들어가는 영역) -->
+    <!-- Unity 컨테이너 (맨 아래) -->
     <FrameLayout
-        android:id="@+id/playerHost"
+        android:id="@+id/unityContainer"
         android:layout_width="0dp"
         android:layout_height="0dp"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent">
+        app:layout_constraintEnd_toEndOf="parent" />
 
-        <!-- 실제 영상/렌더 뷰: VideoView/SurfaceView/UnityPlayerView 등으로 교체 가능 -->
-        <VideoView
-            android:id="@+id/videoView"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            tools:visibility="visible" />
-
-        <!-- 전체화면 반투명 오버레이 (초기 VISIBLE) -->
-        <View
-            android:id="@+id/overlayView"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:background="#80000000" />
-
-        <!-- (선택) 안내 문구 -->
-        <TextView
-            android:id="@+id/previewHint"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="재생을 누르면 아바타가 시작됩니다"
-            android:textColor="#FFFFFFFF"
-            android:background="#66000000"
-            android:padding="8dp"
-            android:layout_gravity="center" />
-    </FrameLayout>
-
-    <!-- 2) 우측 상단 닫기(X) 버튼 (플레이어 위로 떠 있게) -->
-    <ImageButton
-        android:id="@+id/btnClose"
-        android:layout_width="56dp"
-        android:layout_height="56dp"
-        android:layout_margin="12dp"
-        android:padding="15dp"
-        android:background="?attr/selectableItemBackgroundBorderless"
-        android:contentDescription="닫기"
-        android:elevation="8dp"
-        android:src="@android:drawable/ic_menu_close_clear_cancel"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
-
-    <!-- 3) 하단 중앙 컨트롤 바 (재생/일시정지) - 플레이어 위로 떠 있게 -->
-    <LinearLayout
-        android:id="@+id/controlBar"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginBottom="24dp"
-        android:gravity="center"
-        android:orientation="horizontal"
-        android:elevation="8dp"
+    <!-- 상단 UI 레이어 -->
+    <FrameLayout
+        android:id="@+id/uiLayer"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:elevation="16dp"
+        android:clickable="false"
+        android:focusable="false"
+        app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
 
+        <!-- 오버레이: 반투명 회색 (버튼은 통과) -->
+        <View
+            android:id="@+id/overlayView"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone"
+            android:clickable="false"
+            android:focusable="false"
+            android:background="#80000000" />  <!-- ★ 50% 블랙 -->
+
+        <!-- 안내 문구 -->
+        <TextView
+            android:id="@+id/previewHint"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:visibility="gone"
+            android:background="@android:color/transparent"
+            android:textColor="#FFFFFFFF"
+            android:text="@string/unity_preview_hint"
+            android:padding="8dp" />
+
+        <!-- 닫기(X) -->
         <ImageButton
-            android:id="@+id/btnPlay"
+            android:id="@+id/btnClose"
             android:layout_width="56dp"
             android:layout_height="56dp"
+            android:layout_gravity="top|end"
+            android:layout_margin="12dp"
+            android:padding="15dp"
             android:background="?attr/selectableItemBackgroundBorderless"
-            android:src="@android:drawable/ic_media_play"
-            android:contentDescription="재생" />
+            android:src="@android:drawable/ic_menu_close_clear_cancel"
+            android:contentDescription="@string/close"
+            app:tint="#FFFFFFFF" />
 
-        <Space
-            android:layout_width="16dp"
-            android:layout_height="wrap_content" />
+        <!-- 하단 컨트롤 바 -->
+        <LinearLayout
+            android:id="@+id/playBar"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom|center_horizontal"
+            android:layout_marginBottom="24dp"
+            android:orientation="horizontal"
+            android:gravity="center">
 
-        <ImageButton
-            android:id="@+id/btnPause"
-            android:layout_width="56dp"
-            android:layout_height="56dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:src="@android:drawable/ic_media_pause"
-            android:contentDescription="일시정지" />
-    </LinearLayout>
+            <ImageButton
+                android:id="@+id/btnPlay"
+                android:layout_width="56dp"
+                android:layout_height="56dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:src="@android:drawable/ic_media_play"
+                android:contentDescription="@string/play"
+                app:tint="#FFFFFFFF" />
+
+            <Space
+                android:layout_width="16dp"
+                android:layout_height="wrap_content" />
+
+            <ImageButton
+                android:id="@+id/btnPause"
+                android:layout_width="56dp"
+                android:layout_height="56dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:src="@android:drawable/ic_media_pause"
+                android:contentDescription="@string/pause"
+                app:tint="#FFFFFFFF" />
+        </LinearLayout>
+
+        <!-- 로딩 박스 -->
+        <LinearLayout
+            android:id="@+id/loadingBox"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom|center_horizontal"
+            android:layout_marginBottom="92dp"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:visibility="gone"
+            android:clickable="false"
+            android:focusable="false"
+            android:background="@android:color/transparent">
+
+            <ProgressBar
+                android:id="@+id/progress"
+                style="?android:attr/progressBarStyleSmall"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content" />
+
+            <TextView
+                android:id="@+id/loadingText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:text="아바타 준비 중..."
+                android:textColor="#FFFFFF"
+                android:background="@android:color/transparent" />
+        </LinearLayout>
+
+    </FrameLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout>
+
+
+
+
+
