@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  작성자: 조경주, 최보은
+  작성일: 2025-07-06
+  설명: 상태별 색상 선택자(selector) 리소스 파일
+        - 체크 상태일 때와 아닐 때 다른 색상을 적용하기 위한 XML
+        - 체크되면 mp_color_primary 색상, 아니면 짙은 회색(darker_gray) 사용
+  라이선스:
+    - Apache License, Version 2.0에 따라 사용됨
+    - https://www.apache.org/licenses/LICENSE-2.0
+  수정 이력:
+    -
+-->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 체크되었을 때 기본 색상 -->
+    <item android:color="@color/mp_color_primary" android:state_checked="true" />
+    <!-- 체크되지 않았을 때 짙은 회색 -->
+    <item android:color="@android:color/darker_gray" />
+</selector>
+

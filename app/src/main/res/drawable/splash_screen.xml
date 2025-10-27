@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    작성자: 조경주, 최보은
+    작성일: 2025-07-06
+    기능 설명: 앱 배경 리소스 설정 파일 (레이어 리스트)
+              - 배경 색상 위에 로고 이미지를 중앙에 배치함
+
+    수정 이력:
+     - 2025-07-06 : 초기 작성 (배경 + 중앙 로고 설정)
+
+    TODO:
+     - 로고 이미지 해상도 추가 대응 필요 (HDPI, XHDPI 등)
+     - 다크모드 대응 추가 고려
+-->
+
+<resources>
+    <!-- 레이어 리스트: 여러 drawable을 겹쳐서 표시 -->
+    <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+
+        <!-- 배경 색상 -->
+        <item android:drawable="@color/D3E5FF" />
+
+        <!-- 중앙 로고 이미지 -->
+        <item>
+            <bitmap
+                android:gravity="center"
+                android:src="@drawable/logo" />
+        </item>
+
+    </layer-list>
+</resources>

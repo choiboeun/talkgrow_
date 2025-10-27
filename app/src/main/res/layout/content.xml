@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  작성자: 조경주, 최보은
+  작성일: 2025-07-06
+  기능 설명: 번역할 내용을 입력하는 EditText를 포함한 콘텐츠 영역 레이아웃
+  수정 이력:
+    - 2025-07-06 : 초기 레이아웃 작성
+    - 2025-08-03 : EditText -> CustomEditText로 변경
+  TODO:
+    - 입력 글자 수 제한 및 키보드 동작 개선 예정
+-->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:fillViewport="true"
+    android:background="#FFFFFF">
+
+    <LinearLayout
+        android:id="@+id/content_layout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingStart="20dp"
+        android:paddingTop="130dp"
+        android:paddingEnd="20dp">
+
+        <!-- EditText 포함 -->
+        <com.talkgrow_.CustomEditText
+            android:id="@+id/edit_text_content"
+            android:layout_width="match_parent"
+            android:layout_height="150dp"
+            android:gravity="center_horizontal|top"
+            android:hint="번역할 내용을 입력하세요"
+            android:inputType="textMultiLine"
+            android:lines="5"
+            android:maxLines="10"
+            android:padding="10dp"
+            android:scrollbars="vertical"
+            android:textColor="#000000"
+            android:textAlignment="center"
+            android:background="@android:color/white"
+            android:backgroundTint="@android:color/white" />
+    </LinearLayout>
+</ScrollView>
+

@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  작성자: 조경주, 최보은
+  작성일: 2025-07-06
+  기능 설명: 아바타 생성 버튼 레이아웃 - 아바타 아이콘과 설명 텍스트를 세로로 배치, 클릭 가능하도록 설정
+  수정 이력:
+    - 2025-07-06 : 초기 레이아웃 작성
+  TODO:
+    - 클릭 효과 및 접근성 향상 작업 예정
+-->
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="#554CFF"
+    android:gravity="center"
+    android:orientation="vertical"
+    android:paddingTop="15dp"
+    android:paddingBottom="20dp"
+    android:clickable="true"
+    android:focusable="true"
+    android:foreground="?attr/selectableItemBackground">
+
+    <!-- 아바타 아이콘 이미지 -->
+    <ImageView
+        android:id="@+id/avataricon"
+        android:layout_width="50dp"
+        android:layout_height="50dp"
+        android:layout_marginTop="15dp"
+        android:contentDescription="아바타 아이콘"
+        android:src="@drawable/avataricon" />
+
+    <!-- 아바타 생성 설명 텍스트 -->
+    <TextView
+        android:id="@+id/avatar_text"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:layout_marginBottom="20dp"
+        android:shadowColor="#99000000"
+        android:shadowDx="3"
+        android:shadowDy="3"
+        android:shadowRadius="5"
+        android:text="한글 번역 수어 아바타 생성"
+        android:textColor="#FFFFFF"
+        android:textSize="20sp" />
+
+</LinearLayout>

@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  작성자: 조경주, 최보은
+  작성일: 2025-07-06
+  기능 설명: MainActivity의 전체 레이아웃 구성, 헤더, 콘텐츠, 아바타 버튼, 카메라 버튼을 ConstraintLayout으로 배치
+  수정 이력:
+    - 2025-07-06 : 초기 레이아웃 구성 및 각 부분 include로 분리
+    - 2025-08-02 : 음성 인식 버튼 생성 및 음성 권한 부여 설정
+  TODO:
+    - 각 include된 레이아웃 파일 세부 스타일 및 기능 개선 예정
+-->
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/main"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    tools:context=".MainActivity">
+
+    <!-- 헤더 영역: 상단 고정, app:layout_constraint로 부모에 맞춤 -->
+    <include
+        android:id="@+id/header"
+        layout="@layout/header"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
+    <!-- 콘텐츠 영역: 헤더 아래 위치, 아바타 버튼 위에 배치 -->
+    <include
+        android:id="@+id/content"
+        layout="@layout/content"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        app:layout_constraintTop_toBottomOf="@id/header"
+        app:layout_constraintBottom_toTopOf="@id/avatar_button"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_goneMarginBottom="0dp"
+        app:layout_goneMarginTop="0dp" />
+
+
+    <!-- 아바타 버튼 영역: 콘텐츠 아래, 카메라 버튼 위에 배치 -->
+    <include
+        android:id="@+id/avatar_button"
+        layout="@layout/avatarbutton"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        app:layout_constraintTop_toBottomOf="@id/content"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintBottom_toTopOf="@id/camera_button" />
+
+    <!-- 카메라 버튼 영역: 화면 하단에 고정 -->
+    <include
+        android:id="@+id/camera_button"
+        layout="@layout/camerabutton"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        app:layout_constraintTop_toBottomOf="@id/avatar_button"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent" />
+
+    <!-- 음성 인식 버튼: content 위, 오른쪽 아래 -->
+    <ImageButton
+        android:id="@+id/voice_button"
+        android:layout_width="60dp"
+        android:layout_height="60dp"
+        android:layout_marginEnd="16dp"
+        android:layout_marginBottom="16dp"
+        android:background="@drawable/rounded_circle_background"
+        android:src="@drawable/ic_mic"
+        android:contentDescription="음성 인식 버튼"
+        android:clickable="true"
+        android:focusable="true"
+        android:foreground="?attr/selectableItemBackgroundBorderless"
+        android:scaleType="centerInside"
+        android:clipToOutline="true"
+        app:layout_constraintBottom_toTopOf="@id/avatar_button"
+        app:layout_constraintEnd_toEndOf="parent"/>
+
+
+</androidx.constraintlayout.widget.ConstraintLayout>

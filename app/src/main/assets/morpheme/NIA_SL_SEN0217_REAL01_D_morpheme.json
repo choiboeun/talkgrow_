@@ -1,0 +1,46 @@
+{
+    "metaData": {
+        "url": "https://blackolivevideo.blob.core.windows.net/sign-language/1029_emyou0227/NIA_SL_SEN0217_REAL01_D.mp4",
+        "name": "NIA_SL_SEN0217_REAL01_D.mp4",
+        "duration": 9.884,
+        "exportedOn": "2020/12/10"
+    },
+    "data": [
+        {
+            "start": 2.237,
+            "end": 3.703,
+            "attributes": [
+                {
+                    "name": "사거리"
+                }
+            ]
+        },
+        {
+            "start": 4.074,
+            "end": 5.233,
+            "attributes": [
+                {
+                    "name": "건너다"
+                }
+            ]
+        },
+        {
+            "start": 5.497,
+            "end": 6.605,
+            "attributes": [
+                {
+                    "name": "신호등"
+                }
+            ]
+        },
+        {
+            "start": 7.071,
+            "end": 8.094,
+            "attributes": [
+                {
+                    "name": "차내리다"
+                }
+            ]
+        }
+    ]
+}
