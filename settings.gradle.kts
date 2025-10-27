@@ -20,4 +20,10 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "talkgrow_"
+
 include(":app")
+include(":unityLibrary")
+project(":unityLibrary").projectDir =
+    file("UnityExport/SignDemo_Android_2025-10-09/unityLibrary")
+
+
