@@ -10,6 +10,7 @@
         <option name="modules">
           <set>
             <option value="$PROJECT_DIR$" />
+            <option value="$PROJECT_DIR$/UnityExport/SignDemo_Android_2025-10-09/unityLibrary" />
             <option value="$PROJECT_DIR$/app" />
           </set>
         </option>

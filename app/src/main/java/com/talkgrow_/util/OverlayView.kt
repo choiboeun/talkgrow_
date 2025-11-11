@@ -1,3 +1,4 @@
+// android_app/src/main/java/com/talkgrow_/util/OverlayView.kt
 package com.talkgrow_.util
 
 import android.content.Context
@@ -6,29 +7,23 @@ import android.util.AttributeSet
 import android.view.View
 import com.google.mediapipe.tasks.vision.handlandmarker.HandLandmarkerResult
 import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarkerResult
-import kotlin.math.max
+import kotlin.math.min
 
 class OverlayView @JvmOverloads constructor(
     ctx: Context, attrs: AttributeSet? = null
 ) : View(ctx, attrs) {
 
-    // 외부에서 설정
     var mirrorX: Boolean = true
     private var srcW: Int = 0
     private var srcH: Int = 0
 
-    // MediaPipe 결과
     private var handRes: HandLandmarkerResult? = null
     private var poseRes: PoseLandmarkerResult? = null
-
-    // 배지
     private var badgeText: String = ""
 
-    // 좌표변환 (FILL_CENTER + 미러)
     private val drawMatrix = Matrix()
     private val tmpPt = FloatArray(2)
 
-    // 점/선 페인트
     private val handPointPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.YELLOW; style = Paint.Style.FILL; strokeWidth = 6f
     }
@@ -43,7 +38,6 @@ class OverlayView @JvmOverloads constructor(
         color = Color.CYAN; style = Paint.Style.STROKE; strokeWidth = 3.5f
         strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND
     }
-
     private val badgePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE; textSize = 38f
         typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
@@ -52,26 +46,16 @@ class OverlayView @JvmOverloads constructor(
         color = 0x66000000; style = Paint.Style.FILL
     }
 
-    // 손 연결 정의 (MediaPipe Hands)
-    // 0:WRIST, 1:THUMB_CMC, 2:THUMB_MCP, 3:THUMB_IP, 4:THUMB_TIP,
-    // 5:INDEX_MCP,6:INDEX_PIP,7:INDEX_DIP,8:INDEX_TIP,
-    // 9:MIDDLE_MCP,10:MIDDLE_PIP,11:MIDDLE_DIP,12:MIDDLE_TIP,
-    // 13:RING_MCP,14:RING_PIP,15:RING_DIP,16:RING_TIP,
-    // 17:PINKY_MCP,18:PINKY_PIP,19:PINKY_DIP,20:PINKY_TIP
     private val HAND_CONNECTIONS = arrayOf(
-        0 to 1, 1 to 2, 2 to 3, 3 to 4,                 // 엄지
-        0 to 5, 5 to 6, 6 to 7, 7 to 8,                 // 검지
-        0 to 9, 9 to 10, 10 to 11, 11 to 12,            // 중지
-        0 to 13, 13 to 14, 14 to 15, 15 to 16,          // 약지
-        0 to 17, 17 to 18, 18 to 19, 19 to 20,          // 소지
-        5 to 9, 9 to 13, 13 to 17                        // 손등 크로스
+        0 to 1, 1 to 2, 2 to 3, 3 to 4,
+        0 to 5, 5 to 6, 6 to 7, 7 to 8,
+        0 to 9, 9 to 10, 10 to 11, 11 to 12,
+        0 to 13, 13 to 14, 14 to 15, 15 to 16,
+        0 to 17, 17 to 18, 18 to 19, 19 to 20,
+        5 to 9, 9 to 13, 13 to 17
     )
 
-    // 포즈 연결(간결 버전): 몸통/팔/다리 주요 연결
-    // MediaPipe Pose의 인덱스 기준 (0..32) - 주요부위만 그립니다.
     private val P = object {
-        val NOSE = 0; val L_EYE = 2; val R_EYE = 5
-        val L_EAR = 7; val R_EAR = 8
         val L_SHOULDER = 11; val R_SHOULDER = 12
         val L_ELBOW = 13; val R_ELBOW = 14
         val L_WRIST = 15; val R_WRIST = 16
@@ -80,13 +64,11 @@ class OverlayView @JvmOverloads constructor(
         val L_ANKLE = 27; val R_ANKLE = 28
     }
     private val POSE_CONNECTIONS = arrayOf(
-        // 상체
         P.L_SHOULDER to P.R_SHOULDER,
         P.L_HIP to P.R_HIP,
         P.L_SHOULDER to P.L_ELBOW, P.L_ELBOW to P.L_WRIST,
         P.R_SHOULDER to P.R_ELBOW, P.R_ELBOW to P.R_WRIST,
         P.L_SHOULDER to P.L_HIP, P.R_SHOULDER to P.R_HIP,
-        // 하체
         P.L_HIP to P.L_KNEE, P.L_KNEE to P.L_ANKLE,
         P.R_HIP to P.R_KNEE, P.R_KNEE to P.R_ANKLE
     )
@@ -96,13 +78,18 @@ class OverlayView @JvmOverloads constructor(
     fun setSourceSize(w: Int, h: Int) {
         if (w <= 0 || h <= 0) return
         srcW = w; srcH = h
-        computeMatrix(width, height); invalidate()
+        computeMatrix(width, height)
+        invalidate()
     }
 
-    fun setBadge(text: String) { badgeText = text; invalidate() }
+    fun setBadge(text: String?) {
+        badgeText = text?.takeIf { it.isNotBlank() } ?: ""
+        invalidate()
+    }
+
     fun setHandResult(res: HandLandmarkerResult?) { handRes = res; invalidate() }
     fun setPoseResult(res: PoseLandmarkerResult?) { poseRes = res; invalidate() }
-    fun attachTo(previewView: View) {}
+    fun attachTo(@Suppress("UNUSED_PARAMETER") previewView: View) {}
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
@@ -111,7 +98,7 @@ class OverlayView @JvmOverloads constructor(
 
     private fun computeMatrix(vw: Int, vh: Int) {
         if (srcW == 0 || srcH == 0 || vw == 0 || vh == 0) return
-        val s = max(vw.toFloat() / srcW, vh.toFloat() / srcH)   // FILL_CENTER
+        val s = min(vw.toFloat() / srcW, vh.toFloat() / srcH) // FIT(레터박스)
         val drawW = srcW * s
         val drawH = srcH * s
         val offX = (vw - drawW) * 0.5f
@@ -131,20 +118,17 @@ class OverlayView @JvmOverloads constructor(
         super.onDraw(canvas)
         if (srcW == 0 || srcH == 0) return
 
-        // ===== Pose: 선 → 점 순서로 =====
         poseRes?.let { res ->
             val lists = res.landmarks()
             if (lists.isNotEmpty()) {
                 val lms = lists[0]
-                // 선
-                for ((a,b) in POSE_CONNECTIONS) {
+                for ((a, b) in POSE_CONNECTIONS) {
                     if (a in lms.indices && b in lms.indices) {
                         val p1 = mapNorm(lms[a].x(), lms[a].y())
                         val p2 = mapNorm(lms[b].x(), lms[b].y())
                         canvas.drawLine(p1.x, p1.y, p2.x, p2.y, poseLinePaint)
                     }
                 }
-                // 점
                 for (lm in lms) {
                     val p = mapNorm(lm.x(), lm.y())
                     canvas.drawCircle(p.x, p.y, 6f, posePointPaint)
@@ -152,19 +136,15 @@ class OverlayView @JvmOverloads constructor(
             }
         }
 
-        // ===== Hand: 선 → 점 순서로 =====
         handRes?.let { res ->
-            val hands = res.landmarks()
-            for (hand in hands) {
-                // 선
-                for ((a,b) in HAND_CONNECTIONS) {
+            for (hand in res.landmarks()) {
+                for ((a, b) in HAND_CONNECTIONS) {
                     if (a in hand.indices && b in hand.indices) {
                         val p1 = mapNorm(hand[a].x(), hand[a].y())
                         val p2 = mapNorm(hand[b].x(), hand[b].y())
                         canvas.drawLine(p1.x, p1.y, p2.x, p2.y, handLinePaint)
                     }
                 }
-                // 점
                 for (lm in hand) {
                     val p = mapNorm(lm.x(), lm.y())
                     canvas.drawCircle(p.x, p.y, 7f, handPointPaint)
@@ -172,7 +152,6 @@ class OverlayView @JvmOverloads constructor(
             }
         }
 
-        // ===== Badge =====
         if (badgeText.isNotBlank()) {
             val pad = 16f
             val textW = badgePaint.measureText(badgeText)
@@ -189,7 +168,6 @@ class OverlayView @JvmOverloads constructor(
 
     private data class Pt(val x: Float, val y: Float)
 
-    /** 정규화(0..1) → 원본픽셀 → View좌표 */
     private fun mapNorm(xNorm: Float, yNorm: Float): Pt {
         tmpPt[0] = xNorm * srcW
         tmpPt[1] = yNorm * srcH

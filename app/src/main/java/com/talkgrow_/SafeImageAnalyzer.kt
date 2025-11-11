@@ -1,8 +1,11 @@
 package com.talkgrow_
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Matrix
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
 import androidx.camera.core.ImageAnalysis
@@ -11,107 +14,209 @@ import com.google.mediapipe.framework.image.BitmapImageBuilder
 import com.google.mediapipe.framework.image.MPImage
 import com.google.mediapipe.tasks.vision.handlandmarker.HandLandmarkerResult
 import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarkerResult
-import com.talkgrow_.util.HandLandmarkerHelper
 import com.talkgrow_.util.KP
 import com.talkgrow_.util.OverlayView
 import com.talkgrow_.util.PoseLandmarkerHelper
+import com.talkgrow_.util.HandLandmarkerHelper
 import com.talkgrow_.util.YuvToRgb
+import kotlin.math.abs
 
-/**
- * CameraX 프레임 -> (YUV->ARGB) -> MediaPipe Hands/Pose -> Overlay/SegmentPipeline
- * - 비동기 결과를 프레임 단위로 동기화(maybeEmit)하여 빈 입력으로 모델을 호출하지 않음
- */
 class SafeImageAnalyzer(
     private val context: Context,
     private val overlay: OverlayView,
     private val onHandsCount: (Int) -> Unit,
-    private val onAnyResult: (Boolean?) -> Unit,
+    private val onAnyResult: (Boolean?) -> Unit, // true=움직임/손 보임, false=정지/손 내림, null=오류
     private val onLandmarksFrame: (
         pose33: List<KP>,
         left21: List<KP>,
         right21: List<KP>,
         handsVisible: Boolean,
+        mirroredPreview: Boolean,
         ts: Long
     ) -> Unit
 ) : ImageAnalysis.Analyzer {
 
-    companion object { private const val TAG = "SafeImageAnalyzer" }
+    companion object {
+        private const val TAG = "SafeImageAnalyzer"
+        private const val LOG_VERBOSE = false
+        private const val L_SHOULDER_IDX = 11
+        private const val R_SHOULDER_IDX = 12
 
-    // 외부에서 전면카메라 미러 설정
-    fun setMirror(isFront: Boolean) { overlay.mirrorX = isFront }
+        // 움직임 감지(히스테리시스 약간 완화)
+        private const val EMA_ALPHA = 0.20f
+        private const val MOVE_ON  = 0.007f
+        private const val MOVE_OFF = 0.0035f
+    }
 
-    // --- lifecycle ---
-    fun start() { poseHelper.setup(); handHelper.setup() }
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    private var overlayMirrored: Boolean = true
+    fun isMirrored(): Boolean = overlayMirrored
+    fun setMirror(isFront: Boolean) {
+        overlayMirrored = isFront
+        mainHandler.post { overlay.mirrorX = isFront }
+    }
+
+    @Volatile private var isRunning = false
+
+    fun start() {
+        if (isRunning) return
+        isRunning = true
+        poseHelper.setup()
+        handHelper.setup()
+        lastPose = null
+        lastHands = null
+        lastPoseTimeMs = 0L
+        lastHandsTimeMs = 0L
+        lastTsMs = 0L
+
+        // 배지 비활성화
+        mainHandler.post { overlay.setBadge(null) }
+
+        prevFeat = null
+        emaEnergy = 0f
+        moving = false
+        lastHandsVisibleTs = 0L
+    }
+
     fun shutdown() {
+        isRunning = false
         runCatching { handHelper.close() }
         runCatching { poseHelper.close() }
         runCatching { yuv.close() }
-        baseBitmap?.recycle(); baseBitmap = null
-        rotatedBitmap?.recycle(); rotatedBitmap = null
+        baseBitmap?.recycle()
+        baseBitmap = null
+        srcW = 0; srcH = 0
+        lastPose = null
+        lastHands = null
     }
 
-    // 변환기 & 비트맵 버퍼
     private val yuv = YuvToRgb()
     private var baseBitmap: Bitmap? = null
-    private var rotatedBitmap: Bitmap? = null
+    private var srcW: Int = 0
+    private var srcH: Int = 0
 
-    // 소스 크기 (오버레이 좌표계용)
-    private var srcW = 0
-    private var srcH = 0
+    @Volatile private var lastPose: List<KP>? = null
+    @Volatile private var lastHands: Pair<List<KP>, List<KP>>? = null
+    @Volatile private var lastPoseTimeMs: Long = 0L
+    @Volatile private var lastHandsTimeMs: Long = 0L
+    private val JOIN_TOL_MS = 120L
 
-    // --- 프레임 동기화 상태 ---
-    @Volatile private var gotPose = false
-    @Volatile private var gotHands = false
+    // 오버레이 스무딩(표시용). 트리거는 raw 가시성 사용.
+    private val HAND_SMOOTH_MS = 1200L
+    private var lastHandsVisibleTs = 0L
 
-    // 이 프레임에서 파이프라인에 보낼 스냅샷
-    @Volatile private var stagePose: List<KP> = emptyList()
-    @Volatile private var stageLeft: List<KP> = emptyList()
-    @Volatile private var stageRight: List<KP> = emptyList()
-    @Volatile private var stageHandsVisible = false
-    @Volatile private var stageTs: Long = 0L
+    private var prevFeat: FloatArray? = null
+    private var emaEnergy = 0f
+    private var moving = false
 
-    // “인식 중/대기중” 깜빡임 방지 디바운스
-    private var lastHandOkMs = 0L
-    private val HAND_OK_HOLD_MS = 300L
-
-    // 둘 다 왔을 때만 1회 호출
-    @Synchronized
-    private fun maybeEmit() {
-        if (!(gotPose && gotHands)) return
-        val pose = stagePose
-        val l = stageLeft
-        val r = stageRight
-        val hv = stageHandsVisible
-        val ts = stageTs
-
-        gotPose = false
-        gotHands = false
-
-        onLandmarksFrame(pose, l, r, hv, ts)
+    private var lastTsMs = 0L
+    private fun nextMonotonicTsMs(): Long {
+        var ts = SystemClock.uptimeMillis()
+        if (ts <= lastTsMs) ts = lastTsMs + 1
+        lastTsMs = ts
+        return ts
     }
 
-    // --- MediaPipe helpers ---
+    private fun maybeSwapByShoulder(pose: List<KP>?, left: List<KP>, right: List<KP>): Pair<List<KP>, List<KP>> {
+        if (pose == null || pose.size <= R_SHOULDER_IDX) return left to right
+        if (left.isEmpty() || right.isEmpty()) return left to right
+        val lShoulderX = pose[L_SHOULDER_IDX].x
+        val rShoulderX = pose[R_SHOULDER_IDX].x
+        return if (lShoulderX > rShoulderX) right to left else left to right
+    }
+
+    private fun buildFeature(pose: List<KP>, left: List<KP>, right: List<KP>): FloatArray {
+        fun toXY(src: List<KP>) = src.flatMap { listOf(it.x, it.y) }
+        val f = ArrayList<Float>(66 + 42 + 42)
+        f += toXY(pose); f += toXY(left); f += toXY(right)
+        return f.toFloatArray()
+    }
+
+    private fun updateMotionEnergy(cur: FloatArray): Boolean {
+        val prev = prevFeat
+        val inst = if (prev == null) 0f else {
+            val n = kotlin.math.min(prev.size, cur.size)
+            var sum = 0f
+            for (i in 0 until n) sum += kotlin.math.abs(cur[i] - prev[i])
+            sum / n
+        }
+        emaEnergy = (1 - EMA_ALPHA) * emaEnergy + EMA_ALPHA * inst
+        prevFeat = cur
+        moving = if (!moving) emaEnergy > MOVE_ON else emaEnergy > MOVE_OFF
+        return moving
+    }
+
+    @Synchronized
+    private fun tryEmitLatest() {
+        val pose = lastPose ?: return
+        val hands = lastHands ?: return
+        if (abs(lastPoseTimeMs - lastHandsTimeMs) > JOIN_TOL_MS) return
+
+        var (left21, right21) = hands
+        val swapped = maybeSwapByShoulder(pose, left21, right21)
+        left21 = swapped.first
+        right21 = swapped.second
+
+        val hvRaw = left21.isNotEmpty() || right21.isNotEmpty() // 트리거는 이 값으로
+        val now = SystemClock.uptimeMillis()
+        if (hvRaw) lastHandsVisibleTs = now
+        val hvSmoothForUI = hvRaw || (now - lastHandsVisibleTs) <= HAND_SMOOTH_MS
+
+        // ---- 핵심: 손 미가시 즉시 '정지' 발신 + 모션에너지 리셋 → 즉시 disarm ----
+        if (!hvRaw) {
+            prevFeat = null      // 이전 프레임과의 차이 0으로 만들어 즉시 정지 상태 유지
+            emaEnergy = 0f
+            moving = false
+            onAnyResult(false)   // 바로 정지 이벤트
+        } else {
+            // 손이 보일 때는 모션 기반
+            val feat = buildFeature(pose, left21, right21)
+            val isMovingNow = updateMotionEnergy(feat)
+            onAnyResult(isMovingNow || hvRaw) // 손 보이면 true
+        }
+
+        val tsOut = nextMonotonicTsMs()
+        if (LOG_VERBOSE) Log.d(TAG, "emit ts=$tsOut hvRaw=$hvRaw")
+        onLandmarksFrame(pose, left21, right21, hvSmoothForUI, /*mirroredPreview=*/false, tsOut)
+    }
+
     private val handHelper = HandLandmarkerHelper(
         context = context,
         onResult = { res: HandLandmarkerResult, _: MPImage ->
-            overlay.setHandResult(res)
-            overlay.postInvalidateOnAnimation()
+            if (!isRunning) return@HandLandmarkerHelper
 
-            // MediaPipe Hands: 결과는 정규화 좌표(0..1)
-            val hands = res.landmarks() // List<List<NormalizedLandmark>>
+            mainHandler.post {
+                overlay.setHandResult(res)
+                overlay.postInvalidateOnAnimation()
+            }
+
+            val hands = res.landmarks()
+            val handed = res.handednesses()
             val count = hands.size
             onHandsCount(count)
 
-            // 디바운스된 UI 상태
-            if (count > 0) lastHandOkMs = SystemClock.uptimeMillis()
-            val uiOk = (SystemClock.uptimeMillis() - lastHandOkMs) < HAND_OK_HOLD_MS
-            onAnyResult(if (uiOk) true else false)
+            var leftList: List<KP> = emptyList()
+            var rightList: List<KP> = emptyList()
+            for (i in hands.indices) {
+                val label = handed.getOrNull(i)?.firstOrNull()?.categoryName()?.lowercase() ?: ""
+                val xy = hands[i].map { KP(it.x(), it.y()) }
+                when (label) {
+                    "left" -> leftList = xy
+                    "right" -> rightList = xy
+                    else -> {
+                        if (leftList.isEmpty()) leftList = xy
+                        else if (rightList.isEmpty()) rightList = xy
+                    }
+                }
+            }
 
-            stageLeft  = hands.getOrNull(0)?.map { lm -> KP(lm.x(), lm.y(), lm.z()) } ?: emptyList()
-            stageRight = hands.getOrNull(1)?.map { lm -> KP(lm.x(), lm.y(), lm.z()) } ?: emptyList()
-            stageHandsVisible = count > 0
-            gotHands = true
-            maybeEmit()
+            val tsNow = SystemClock.uptimeMillis()
+            synchronized(this) {
+                lastHands = leftList to rightList
+                lastHandsTimeMs = tsNow
+            }
+            tryEmitLatest()
         },
         onError = { e: Throwable ->
             Log.e(TAG, "HandLandmarker error", e)
@@ -122,81 +227,78 @@ class SafeImageAnalyzer(
     private val poseHelper = PoseLandmarkerHelper(
         context = context,
         onResult = { res: PoseLandmarkerResult, _: Any?, w: Int, h: Int ->
-            overlay.setPoseResult(res)
-            overlay.postInvalidateOnAnimation()
+            if (!isRunning) return@PoseLandmarkerHelper
 
-            val lms = res.landmarks().firstOrNull() // List<NormalizedLandmark>?
-            stagePose = lms?.map { lm -> KP(lm.x(), lm.y(), lm.z()) } ?: emptyList()
+            val lms = res.landmarks().firstOrNull()
+            val pose = lms?.map { KP(it.x(), it.y()) } ?: emptyList()
 
-            if (w != srcW || h != srcH) {
-                srcW = w; srcH = h
-                overlay.setSourceSize(srcW, srcH)
+            mainHandler.post {
+                overlay.setPoseResult(res)
+                if (w != srcW || h != srcH) {
+                    srcW = w; srcH = h
+                    overlay.setSourceSize(srcW, srcH)
+                }
+                overlay.postInvalidateOnAnimation()
             }
 
-            gotPose = true
-            maybeEmit()
+            val tsNow = SystemClock.uptimeMillis()
+            synchronized(this) {
+                lastPose = pose
+                lastPoseTimeMs = tsNow
+            }
+            tryEmitLatest()
         },
-        onError = { e: Throwable ->
-            Log.e(TAG, "PoseLandmarker error", e)
-        }
+        onError = { e: Throwable -> Log.e(TAG, "PoseLandmarker error", e) }
     )
 
-    // 비트맵 버퍼 보장
     private fun ensureBaseBitmap(w: Int, h: Int) {
         val needNew = baseBitmap?.let { it.width != w || it.height != h } ?: true
         if (needNew) {
             baseBitmap?.recycle()
-            rotatedBitmap?.recycle()
             baseBitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-            rotatedBitmap = null
             srcW = w; srcH = h
-            overlay.setSourceSize(w, h)
+            mainHandler.post { overlay.setSourceSize(w, h) }
         }
     }
 
-    // 회전 적용 비트맵 생성
-    private fun rotateBitmap(src: Bitmap, deg: Int): Bitmap {
+    private fun rotateBitmapIfNeeded(src: Bitmap, deg: Int): Bitmap {
         if (deg == 0) return src
         val m = Matrix().apply { postRotate(deg.toFloat()) }
         return Bitmap.createBitmap(src, 0, 0, src.width, src.height, m, true)
     }
 
+    @SuppressLint("UnsafeOptInUsageError")
     override fun analyze(image: ImageProxy) {
-        val ts: Long = SystemClock.uptimeMillis()
-        stageTs = ts
-
+        if (!isRunning) { image.close(); return }
         try {
-            val w = image.width
-            val h = image.height
-            ensureBaseBitmap(w, h)
+            val originalBitmap = image.toBitmap()
+            val rotDeg = image.imageInfo.rotationDegrees
+            val uprightBitmap = rotateBitmapIfNeeded(originalBitmap, rotDeg)
 
-            val base = baseBitmap!!
-            // 1) YUV -> ARGB
-            yuv.yuvToRgb(image, base)
-
-            // 2) 회전 보정
-            val rotDeg: Int = image.imageInfo.rotationDegrees
-            val upright: Bitmap = if (rotDeg == 0) base else rotateBitmap(base, rotDeg)
-
-            // 3) 소스 크기 갱신
-            if (upright.width != srcW || upright.height != srcH) {
-                srcW = upright.width
-                srcH = upright.height
-                overlay.setSourceSize(srcW, srcH)
+            if (uprightBitmap.width != srcW || uprightBitmap.height != srcH) {
+                srcW = uprightBitmap.width
+                srcH = uprightBitmap.height
+                mainHandler.post { overlay.setSourceSize(srcW, srcH) }
             }
 
-            // 4) MPImage (회전 반영했으므로 rotation=0)
-            val mpImage: MPImage = BitmapImageBuilder(upright).build()
+            val mpImage: MPImage = BitmapImageBuilder(uprightBitmap).build()
+            val tsNow = SystemClock.uptimeMillis()
+            handHelper.detectAsync(mpImage, 0, tsNow)
+            poseHelper.detectAsync(mpImage, 0, tsNow)
 
-            // 5) 두 태스크에 비동기 요청
-            handHelper.detectAsync(mpImage, /*rotationDeg=*/0, ts)
-            poseHelper.detectAsync(mpImage, /*rotationDeg=*/0, ts)
-
+            if (uprightBitmap !== originalBitmap) uprightBitmap.recycle()
         } catch (t: Throwable) {
             Log.e(TAG, "analyze() failed", t)
             onAnyResult(null)
         } finally {
             image.close()
         }
+    }
+
+    private fun ImageProxy.toBitmap(): Bitmap {
+        ensureBaseBitmap(width, height)
+        val bitmap = baseBitmap ?: throw IllegalStateException("Bitmap buffer unavailable")
+        yuv.yuvToRgb(this, bitmap)
+        return bitmap
     }
 }

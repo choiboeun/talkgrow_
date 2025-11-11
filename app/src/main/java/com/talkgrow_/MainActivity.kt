@@ -158,8 +158,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun isModelReady(): Boolean {
         return try {
-            assets.open("model_v8_focus16_284_fp16.tflite").close()
-            assets.open("labels_ko_284.json").close()
+            assets.open("sign_lstm_fp32_1x91x134_FIXED.tflite").close()
+            assets.open("vocab.json").close()
             assets.open("hand_landmarker.task").close()
             assets.open("pose_landmarker_full.task").close()
             true
