@@ -23,7 +23,17 @@ import org.json.JSONObject
 
 class AvatarGenerateActivity : AppCompatActivity() {
 
-    companion object { private const val TAG = "AvatarGenerate" }
+    // ✅ 여기에 Unity 준비 완료 콜백도 함께 정의
+    companion object {
+        private const val TAG = "AvatarGenerate"
+
+        // ✅ Unity에서 호출됨 (AndroidBridge.Start() -> onUnityReady)
+        @JvmStatic
+        fun onUnityReady(activity: android.app.Activity) {
+            Log.d(TAG, "✅ Unity BridgeObject is ready and active")
+            Toast.makeText(activity, "Unity Ready!", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     private lateinit var unityContainer: FrameLayout
     private lateinit var overlay: View
@@ -36,18 +46,14 @@ class AvatarGenerateActivity : AppCompatActivity() {
     private lateinit var playBar: View
     private lateinit var uiLayer: View
 
-    /** 중복 전송 방지용 */
     private var sending = false
     private val ui = Handler(Looper.getMainLooper())
-
-    /** 오버레이(반투명)로 화면만 덮고 터치는 통과시키는 정책 */
     private val overlayBlocksTouch = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_avatar_generate)
 
-        // ── view refs
         unityContainer = findViewById(R.id.unityContainer)
         overlay        = findViewById(R.id.overlayView)
         btnClose       = findViewById(R.id.btnClose)
@@ -59,49 +65,40 @@ class AvatarGenerateActivity : AppCompatActivity() {
         playBar        = findViewById(R.id.playBar)
         uiLayer        = findViewById(R.id.uiLayer)
 
-        // 뒤로가기 = 현재 화면만 종료
         onBackPressedDispatcher.addCallback(this) { goBackToMain() }
         btnClose.setOnClickListener { goBackToMain() }
 
-        // Unity가 내부 SurfaceView를 추가/제거할 때마다 Z, 터치 정리
         unityContainer.setOnHierarchyChangeListener(object : ViewGroup.OnHierarchyChangeListener {
             override fun onChildViewAdded(parent: View?, child: View?) { fixZAndTouch(); raiseUiHard() }
             override fun onChildViewRemoved(parent: View?, child: View?) {}
         })
 
-        // 초기 UI
         hideOverlay()
         btnPause.isEnabled = true
         btnPlay.isEnabled  = true
 
-        // ▶ 재생
         btnPlay.setOnClickListener {
             Log.d(TAG, "Play clicked")
             Toast.makeText(this, "재생", Toast.LENGTH_SHORT).show()
             if (sending) return@setOnClickListener
             sending = true
 
-            // 재생에 사용할 payload 준비(없으면 Demo)
-            val text = intent.getStringExtra("extra_text") ?: "Demo"
-            val payload = JSONObject().put("text", text).toString()
+            val payload = intent.getStringExtra("extra_json")
+                ?: JSONObject().put("text", "Demo").toString()
 
-            // Unity 뷰가 컨테이너에 붙어 있지 않다면 먼저 attach
             ensureUnityAttached {
                 sendToUnityAndPlay(payload)
             }
         }
 
-        // ⏸ 일시정지
         btnPause.setOnClickListener {
             Log.d(TAG, "Pause clicked")
             Toast.makeText(this, "일시정지", Toast.LENGTH_SHORT).show()
             sending = false
-            // 유니티에 Pause 전송
-            UnityPlayer.UnitySendMessage("SignPipeline", "Pause", "")
-            showOverlay() // 화면 반투명 처리(버튼은 클릭 가능)
+            UnityPlayer.UnitySendMessage("BridgeObject", "Pause", "")
+            showOverlay()
         }
 
-        // 디버깅: 실제로 버튼 터치가 도달하는지 로그
         btnPause.setOnTouchListener { _, e ->
             if (e.action == MotionEvent.ACTION_DOWN) Log.d(TAG, "Pause touch DOWN")
             false
@@ -113,20 +110,17 @@ class AvatarGenerateActivity : AppCompatActivity() {
     }
 
     private fun goBackToMain() {
+        runCatching { UnityPlayer.UnitySendMessage("BridgeObject", "Pause", "") }
         finish()
         overridePendingTransition(0, 0)
     }
 
-    /** Unity 엔진은 재사용, 뷰만 현재 activity의 컨테이너에 붙임 */
     private fun ensureUnityAttached(onReady: () -> Unit) {
         unityContainer.post {
             try {
                 UnityHolder.attachTo(unityContainer, this)
                 UnityPlayer.currentActivity = this
-
-                // 화면 진입 시 자동 재생 방지: Idle 상태로 리셋만 수행(Play는 절대 호출하지 않음)
-                UnityPlayer.UnitySendMessage("SignPipeline", "ResetPose", "")
-
+                UnityPlayer.UnitySendMessage("BridgeObject", "ResetPose", "")
                 fixZAndTouch()
                 raiseUiHard()
                 startDemoteLoopForAWhile()
@@ -143,24 +137,18 @@ class AvatarGenerateActivity : AppCompatActivity() {
         }
     }
 
-    /**
-     * Android → Unity:
-     * 1) ResetPose (Idle 보장)
-     * 2) RunFromAndroid(payload)  : CSV/파라미터 로드 등
-     * 3) Play                      : 실제 재생 시작
-     */
+    // ✅ payload를 그대로 Unity로 전달
     private fun sendToUnityAndPlay(payload: String) {
         runCatching {
-            UnityPlayer.UnitySendMessage("SignPipeline", "ResetPose", "")
-            UnityPlayer.UnitySendMessage("SignPipeline", "RunFromAndroid", payload)
-
-            // 짧게 한 템포 두고 Play (러닝타임 초기화 여유)
             ui.postDelayed({
-                UnityPlayer.UnitySendMessage("SignPipeline", "Play", "")
+                UnityPlayer.UnitySendMessage("BridgeObject", "ResetPose", "")
+                Log.d("UnityBridge", "UnitySendMessage 호출 전: $payload")
+                UnityPlayer.UnitySendMessage("BridgeObject", "OnReceiveText", payload)
+                UnityPlayer.UnitySendMessage("BridgeObject", "Play", "")
                 sending = false
                 hideOverlay()
                 raiseUiHard()
-            }, 200)
+            }, 1000)
         }.onFailure {
             Log.e(TAG, "UnitySendMessage error", it)
             toast("재생 명령 실패")
@@ -168,7 +156,6 @@ class AvatarGenerateActivity : AppCompatActivity() {
         }
     }
 
-    /** Unity Surface를 아래로, 앱 UI를 위로 올리고 Unity가 터치를 가로채지 않도록 설정 */
     private fun fixZAndTouch() {
         (UnityHolder.player?.view as? ViewGroup)?.let { root ->
             forEachChildRecursive(root) { v ->
@@ -191,7 +178,6 @@ class AvatarGenerateActivity : AppCompatActivity() {
         }
     }
 
-    /** 실제 조작 UI를 항상 최상단으로 */
     private fun raiseUiHard() {
         overlay.apply {
             bringToFront()
@@ -212,7 +198,6 @@ class AvatarGenerateActivity : AppCompatActivity() {
         }
     }
 
-    /** Unity가 자신의 Z를 바꾸는 걸 잠시 동안 계속 되돌림 */
     private fun startDemoteLoopForAWhile() {
         var left = 50
         val r = object : Runnable {
@@ -237,7 +222,7 @@ class AvatarGenerateActivity : AppCompatActivity() {
         overlay.apply {
             alpha = 0.6f
             visibility = View.VISIBLE
-            isClickable = overlayBlocksTouch.not() // false면 터치 통과
+            isClickable = overlayBlocksTouch.not()
             isFocusable = false
         }
         previewHint.visibility = View.VISIBLE
@@ -269,13 +254,11 @@ class AvatarGenerateActivity : AppCompatActivity() {
 
     private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
 
-    // ── 생명주기: 자동 재생 방지(Play는 절대 호출하지 않음) ──
     override fun onResume() {
         super.onResume()
         UnityHolder.attachTo(unityContainer, this)
         UnityPlayer.currentActivity = this
-        // 화면 복귀 시엔 Idle로만 리셋(자동 재생 X)
-        UnityPlayer.UnitySendMessage("SignPipeline", "ResetPose", "")
+        UnityPlayer.UnitySendMessage("BridgeObject", "ResetPose", "")
         hideOverlay()
         startDemoteLoopForAWhile()
     }
@@ -292,8 +275,7 @@ class AvatarGenerateActivity : AppCompatActivity() {
     }
 
     override fun onPause() {
-        // 앱이 내려갈 때는 Unity도 멈추게
-        UnityPlayer.UnitySendMessage("SignPipeline", "Pause", "")
+        UnityPlayer.UnitySendMessage("BridgeObject", "Pause", "")
         UnityHolder.player?.windowFocusChanged(false)
         UnityHolder.player?.pause()
         super.onPause()
@@ -301,8 +283,8 @@ class AvatarGenerateActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         ui.removeCallbacksAndMessages(null)
-        UnityHolder.detachFrom(unityContainer) // 엔진은 유지
+        UnityHolder.detachFrom(unityContainer)
         super.onDestroy()
     }
 }
-
+  

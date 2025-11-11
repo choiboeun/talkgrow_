@@ -11,6 +11,8 @@ import android.speech.SpeechRecognizer
 import android.util.Log
 import android.view.View
 import android.view.ViewTreeObserver
+import android.view.animation.AlphaAnimation
+import android.view.animation.Animation
 import android.widget.*
 import androidx.activity.addCallback
 import androidx.appcompat.app.AppCompatActivity
@@ -19,31 +21,38 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import com.talkgrow_.inference.TFLiteSignInterpreter
-import kotlin.random.Random
+import com.talkgrow_.AvatarGenerateActivity
+import com.talkgrow_.util.VocabRepo
 
-
+// ✅ 추가 import (전처리 기능을 위한)
+import com.talkgrow_.util.TextPreprocessor
+import org.json.JSONObject
+import com.unity3d.player.UnityPlayer
 
 class MainActivity : AppCompatActivity() {
 
-    private val REQ_RECORD_AUDIO = 200
-    private val REQ_CAMERA = 201
+    private companion object {
+        private const val REQ_RECORD_AUDIO = 200
+        private const val REQ_CAMERA = 201
+    }
 
     private lateinit var micButton: ImageButton
     private lateinit var speechRecognizer: SpeechRecognizer
     private lateinit var contentEditText: EditText
 
-    // 수어→한국어 모드 (기본 true)
+    private var signInterpreter: TFLiteSignInterpreter? = null
+    private val pulseAnimation: Animation by lazy {
+        AlphaAnimation(0.4f, 1f).apply {
+            duration = 500
+            repeatMode = Animation.REVERSE
+            repeatCount = Animation.INFINITE
+        }
+    }
+
     private var isKoreanSignToKorean = true
-
-
-    // 아바타 버튼 더블클릭 방지
     private var isLaunchingAvatar = false
-
-    // 두 번 뒤로가기 처리
     private var backPressedOnce = false
     private val backResetRunnable = Runnable { backPressedOnce = false }
-
-    // ---- Toast 디바운서 ----
     private var lastToastAt = 0L
 
     private fun logLife(msg: String) = Log.d("MainLife", msg)
@@ -56,11 +65,13 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         logLife("onCreate intent=$intent isTaskRoot=$isTaskRoot")
         setContentView(R.layout.activity_main)
+
+        VocabRepo.ensureLoaded(applicationContext)
+        Log.i("VocabRepo", "entries = " + VocabRepo.getWord2Id(applicationContext).size)
 
         val rootView = findViewById<View>(R.id.main)
         val avatarButton = findViewById<LinearLayout>(R.id.avatar_button)
@@ -68,8 +79,6 @@ class MainActivity : AppCompatActivity() {
         micButton = findViewById(R.id.voice_button)
         contentEditText = findViewById(R.id.edit_text_content)
 
-
-        // ✅ 메인에서만 태스크를 백그라운드로 (singleTask 전제)
         onBackPressedDispatcher.addCallback(this) {
             if (backPressedOnce) {
                 contentEditText.removeCallbacks(backResetRunnable)
@@ -83,18 +92,14 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // (선택) TFLite 모델 로드 — 파일이 없으면 조용히 스킵
         tryInitTflite()
 
-        // 시스템 바 패딩
         ViewCompat.setOnApplyWindowInsetsListener(rootView) { view, insets ->
             val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             view.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
-
             insets
         }
 
-        // 키보드 열림에 따른 버튼 show/hide
         rootView.viewTreeObserver.addOnGlobalLayoutListener(object : ViewTreeObserver.OnGlobalLayoutListener {
             override fun onGlobalLayout() {
                 val r = Rect()
@@ -118,8 +123,6 @@ class MainActivity : AppCompatActivity() {
             isKoreanSignToKorean = !isKoreanSignToKorean
         }
 
-
-        // ✅ 아바타 버튼 (전환 안전화 + 디바운스 + 예외 안전망)
         avatarButton.setOnClickListener {
             if (isLaunchingAvatar) return@setOnClickListener
 
@@ -132,23 +135,30 @@ class MainActivity : AppCompatActivity() {
             isLaunchingAvatar = true
             avatarButton.isEnabled = false
 
-            runCatching {
-                // 메인(루트 singleTask) 유지, 아바타만 위로
-                startActivity(
-                    Intent(this, AvatarGenerateActivity::class.java)
-                        .putExtra("extra_text", content)
-                )
-                // 절대 finish() 호출하지 말 것
-            }.onFailure { t ->
+            // ✅ 수정: JSON payload 생성 및 Intent extra로 전달하는 구조로 변경
+            val payload = buildUnityPayloadJson(content)
+            val intent = Intent(this, AvatarGenerateActivity::class.java)
+            // ✅ 추가: extra_json 필드에 JSON payload 넣음
+            if (payload != null) {
+                intent.putExtra("extra_json", payload)
+            }
+            startActivity(intent)
+
+            // ✅ 제거 예정: MainActivity 내 sendToUnity 호출 (이제 AvatarGenerateActivity로 이동)
+            /*
+            contentEditText.postDelayed({
+                sendToUnity(content)
                 isLaunchingAvatar = false
                 avatarButton.isEnabled = true
-                Toast.makeText(this, "아바타 화면 전환 실패: ${t.javaClass.simpleName}", Toast.LENGTH_LONG).show()
-                Log.e("MainActivity", "start AvatarGenerateActivity failed", t)
-
-            }
+            }, 300L)
+            */
+            // ✅ 추가: 버튼 복귀 처리
+            contentEditText.postDelayed({
+                isLaunchingAvatar = false
+                avatarButton.isEnabled = true
+            }, 300L)
         }
 
-        // 카메라 버튼: 권한 → CameraActivity
         cameraButton.setOnClickListener {
             if (!isKoreanSignToKorean) {
                 safeToast("언어 설정을 다시 해주세요.")
@@ -157,7 +167,6 @@ class MainActivity : AppCompatActivity() {
             checkCameraPermissionAndStart()
         }
 
-        // 입력창 터치 시 토스트 연사 방지
         contentEditText.setOnTouchListener { v, e ->
             if (e.action == android.view.MotionEvent.ACTION_UP) v.performClick()
             if (isKoreanSignToKorean) {
@@ -166,7 +175,6 @@ class MainActivity : AppCompatActivity() {
             } else false
         }
 
-        // 마이크 버튼
         micButton.setOnClickListener {
             if (isKoreanSignToKorean) {
                 safeToast("언어 설정을 다시 해주세요.")
@@ -178,12 +186,11 @@ class MainActivity : AppCompatActivity() {
         speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this)
         speechRecognizer.setRecognitionListener(object : RecognitionListener {
             override fun onReadyForSpeech(params: Bundle?) {
-
                 Toast.makeText(this@MainActivity, "음성 인식 시작...", Toast.LENGTH_SHORT).show()
                 micButton.startAnimation(pulseAnimation)
                 micButton.setColorFilter(ContextCompat.getColor(this@MainActivity, R.color.voice_active))
-
             }
+
             override fun onBeginningOfSpeech() {}
             override fun onRmsChanged(rmsdB: Float) {}
             override fun onBufferReceived(buffer: ByteArray?) {}
@@ -191,7 +198,6 @@ class MainActivity : AppCompatActivity() {
             override fun onError(error: Int) { micButton.clearColorFilter() }
             override fun onResults(results: Bundle) {
                 micButton.clearColorFilter()
-
                 val matches = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                 if (!matches.isNullOrEmpty()) {
                     val currentText = contentEditText.text.toString()
@@ -200,18 +206,16 @@ class MainActivity : AppCompatActivity() {
                     contentEditText.setSelection(newText.length)
                 }
             }
+
             override fun onPartialResults(partialResults: Bundle?) {}
             override fun onEvent(eventType: Int, params: Bundle?) {}
         })
     }
 
-
-    // ✅ singleTask 전제: 다른 화면에서 돌아올 때 호출될 수 있음
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         logLife("onNewIntent intent=$intent")
-        setIntent(intent) // 현재 액티비티의 인텐트 최신화 (UI 업데이트 필요 시 여기서)
-        // 절대 여기서 moveTaskToBack(true) 호출 X
+        setIntent(intent)
     }
 
     override fun onResume() {
@@ -219,12 +223,10 @@ class MainActivity : AppCompatActivity() {
         logLife("onResume (isTaskRoot=$isTaskRoot) intent=$intent")
         isLaunchingAvatar = false
         findViewById<LinearLayout>(R.id.avatar_button)?.isEnabled = true
-        // 절대 여기서 moveTaskToBack(true) 호출 X
     }
 
     override fun onPause() {
         super.onPause()
-        // 🔒 음성 인식/애니메이션 중단(안정성)
         runCatching { speechRecognizer.stopListening() }
         micButton.clearAnimation()
         micButton.clearColorFilter()
@@ -233,7 +235,6 @@ class MainActivity : AppCompatActivity() {
     override fun onStop() {
         super.onStop()
         logLife("onStop")
-        // 🔒 더 강하게 정리(희귀 크래시 케이스 방지)
         runCatching { speechRecognizer.cancel() }
     }
 
@@ -241,35 +242,34 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
         logLife("onDestroy")
         contentEditText.removeCallbacks(backResetRunnable)
-        // 🔒 완전 정리
         runCatching { speechRecognizer.destroy() }
         micButton.clearAnimation()
         micButton.clearColorFilter()
-        // signInterpreter?.close() // 필요 시
     }
 
-    // ─────────────────────────────────────────────
-    // TFLite: 파일 없으면 조용히 스킵 (학습 완료 후 연결)
-    // ─────────────────────────────────────────────
     private fun tryInitTflite() {
         try {
             signInterpreter = TFLiteSignInterpreter(this)
             Log.d("TalkGrow", "TFLite 모델 로딩 성공")
-            sanityRunOnce() // 간단 검증
+            sanityRunOnce()
         } catch (e: Exception) {
             Log.w("TalkGrow", "TFLite 초기화 생략/실패: ${e.message}")
             signInterpreter = null
-
-    private fun isModelReady(): Boolean {
-        return try {
-            assets.open("export_infer.tflite").close()
-            assets.open("feat_norm.json").close()
-            assets.open("hand_landmarker.task").close()
-            assets.open("pose_landmarker_full.task").close()
-            runCatching { assets.open("meaning_map.json").close() }.isSuccess ||
-                    runCatching { assets.open("sen_label_map.json").close() }.isSuccess
-        } catch (_: Throwable) { false }
+        }
     }
+
+    private fun sanityRunOnce() {
+        Log.d("TalkGrow", "sanityRunOnce()")
+    }
+
+    private fun isModelReady(): Boolean = try {
+        assets.open("export_infer.tflite").close()
+        assets.open("feat_norm.json").close()
+        assets.open("hand_landmarker.task").close()
+        assets.open("pose_landmarker_full.task").close()
+        runCatching { assets.open("meaning_map.json").close() }.isSuccess ||
+                runCatching { assets.open("sen_label_map.json").close() }.isSuccess
+    } catch (_: Throwable) { false }
 
     private fun startCameraActivitySafe() {
         if (!isModelReady()) {
@@ -281,7 +281,6 @@ class MainActivity : AppCompatActivity() {
         } catch (t: Throwable) {
             safeToast("카메라 화면 진입 실패: ${t.javaClass.simpleName}", 2000)
             Log.e("TalkGrow", "startCameraActivitySafe", t)
-
         }
     }
 
@@ -323,10 +322,28 @@ class MainActivity : AppCompatActivity() {
         speechRecognizer.startListening(i)
     }
 
+    // ✅ 추가 메서드: JSON payload 생성
+    private fun buildUnityPayloadJson(text: String): String? {
+        val vocab = VocabRepo.getWord2Id(this).keys
+        val sents = TextPreprocessor.processInputTextWithVocab(
+            input = text,
+            vocab = vocab,
+            useUnk = true,
+            unkToken = "<unk>"
+        )
+        if (sents.isEmpty()) {
+            Toast.makeText(this, "전처리 결과가 비었습니다.", Toast.LENGTH_SHORT).show()
+            return null
+        }
 
-    override fun onDestroy() {
-        super.onDestroy()
-        speechRecognizer.destroy()
+        val tokens = sents.flatten()
+
+        // ✅ Unity에서 배열 형식으로 파싱할 수 있게 변경
+        return tokens.joinToString(
+            prefix = "[\"",
+            separator = "\",\"",
+            postfix = "\"]"
+        )
     }
 
 }
